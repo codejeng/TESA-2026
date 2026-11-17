@@ -164,6 +164,16 @@ def game_report(mem_path: Path, mem: dict, seg: dict | None, rev: dict | None) -
         left_tv = sum(t["tv"] * lots[l]["kg_remaining"] for l, t in truth.items() if l in lots and t.get("tv"))
         if total_tv and standings:
             out["pr_calc"] = round((standings["revenue_thb"] + 0.80 * left_tv) / total_tv, 4)
+            # lots we never offered all game = no RFQ spec ever accepted them (e.g. REJECT grade):
+            # they always end at 0.80, so leave them out to compare strategies fairly
+            offered = {o["lot_id"] for offers in sent.values() for o in offers}
+            dead = [l for l in truth if l in lots and l not in offered]
+            out["unsellable"] = {l: lots[l]["kg_total"] // BAG for l in dead}
+            tv_a = sum(truth[l]["tv"] * lots[l]["kg_total"] for l in truth if l in lots and l not in dead)
+            left_a = sum(truth[l]["tv"] * lots[l]["kg_remaining"] for l in truth if l in lots and l not in dead)
+            if tv_a:
+                out["pr_adj"] = round((standings["revenue_thb"] + 0.80 * left_a) / tv_a, 4)
+                out["bags_left_adj"] = out["bags_left"] - sum(out["unsellable"].values())
         out["score"] = reveal_score(rev)
         out["reveal_file"] = rev.get("_file")
     return out
