@@ -54,6 +54,24 @@ def send_offers(api: Market, offers: list[dict]) -> list[dict]:
     return sent
 
 
+def backfill(api: Market, memory: Memory, state: dict, tried: set) -> None:
+    """Agent ดับไปบางรอบ: last_results มีแค่รอบล่าสุด จึงดึงผลรอบที่ขาดย้อนหลังจาก /v1/results (ลองครั้งเดียวต่อรอบ)"""
+    rnd = state["round"]
+    if rnd["kind"] != "real":
+        return
+    have = {r["round_id"] for r in memory.rounds}
+    for n in range(1, rnd["number"]):
+        rid = f"R{n}"
+        if rid in have or rid in tried:
+            continue
+        tried.add(rid)
+        try:
+            memory.record_results(api.call("GET", "/v1/results", params={"round": rid}))
+            log("backfilled", round=rid)
+        except Exception as e:                      # noqa: BLE001 — missing history must not stop the agent
+            log("backfill_error", round=rid, error=str(e))
+
+
 def play(api: Market, llm: LLM | None, forever: bool) -> None:
     info = api.calendar()
     rules = info["rules"]
@@ -69,7 +87,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
         # the sandbox reuses lot ids every game, so the samples are what tell one game from the next
         lots_key = tuple(sorted((l["lot_id"], json.dumps(l["sample"], sort_keys=True)) for l in state["lots"]))
         if lots_key != game:                        # new game (or sandbox reset): start fresh
-            game, acted, tv = lots_key, set(), estimate_lots(rules, state["lots"])
+            game, acted, tv, tried = lots_key, set(), estimate_lots(rules, state["lots"]), set()
             tag = hashlib.sha1(repr(lots_key).encode()).hexdigest()[:8]
             memory = Memory(LOGS / f"memory-{state['market']}-{tag}.json")
             log("new_game", market=state["market"], lots=len(state["lots"]), tv=tv)
@@ -86,6 +104,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
             rid = state["round"]["round_id"]
             acted.add(rid)
             memory.record_results(state["last_results"])
+            backfill(api, memory, state, tried)
             if any(o["round_id"] == rid for o in state["my_open_offers"]):
                 # restarted after sending this round: the market already holds our offers, and a new batch
                 # would replace them (capacity_left_kg no longer counts them, so it would offer less)
