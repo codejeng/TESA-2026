@@ -51,7 +51,8 @@ TIGHT = 1.0          # pressure เกินนี้ = ขายไม่ทั
 URGENCY_SLOPE = 0.05 # pressure เกิน 1 ทุก 0.1 -> ลด k 0.005
 URGENCY_MAX = 0.04
 FESTIVAL_BONUS = 0.01
-LAST_ROUND_CUT = 0.05   # รอบจริงรอบสุดท้าย: ของที่ไม่ขายตอนนี้เหลือ 0.80 แน่ -> ลด k เท่านี้ (ไม่ต่ำกว่า FLOOR_LATE)
+LAST_LADDER = (0.0, -0.03, -0.06)   # รอบจริงรอบสุดท้าย: ไล่ราคาลงทีละซอง ซองท้ายๆ ลด 0.03, 0.06 (ไม่ต่ำกว่า FLOOR_LATE)
+                                    # ซองของผู้ซื้อที่รอบก่อนซื้อไม่ครบ (bought < wanted) ได้ราคาต่ำก่อน
 PRACTICE_LADDER = (-0.03, 0.0, 0.03)    # รอบซ้อม: ยื่นหลายระดับเพื่อหยั่งตลาด (ถ้ารอบซ้อมตัดสต็อกจริง ให้ตั้ง (0, 0, 0))
 PACE_NO_CAP = 2.0
 
@@ -176,6 +177,7 @@ def learn(state: dict, ctx: Context) -> dict:
         rows_by_buyer = defaultdict(list)
         for m in summ.values():
             rows_by_buyer[m["buyer"]].append(m)
+        last_short = {b for b, rows in rows_by_buyer.items() if any(r["bought_kg"] < r["wanted_kg"] for r in rows)}
 
         for buyer, rows in rows_by_buyer.items():
             t = rows[0]["buyer_type"]
@@ -223,7 +225,7 @@ def learn(state: dict, ctx: Context) -> dict:
 
     fill = min(1.0, max(0.3, filled / offered)) if offered >= 3 * BAG else FILL_DEFAULT
     return {"buyers": buyers, "lot_off": {k: round(v, 3) for k, v in lot_off.items() if v}, "fill": fill,
-            "spec": (passed, failed)}
+            "spec": (passed, failed), "short": last_short if rounds else set()}
 
 
 # ---------------- 2. ขายทันไหม ----------------
@@ -249,8 +251,6 @@ def price_rfqs(state: dict, ctx: Context, buyers: dict, pres: float) -> tuple[di
     tight = not practice and (pres > TIGHT or left <= 2)
     floor = FLOOR_LATE if tight else FLOOR_EARLY
     cut = 0.0 if practice else min(URGENCY_MAX, max(0.0, (pres - 1.0) * URGENCY_SLOPE))
-    if not practice and left <= 1:
-        cut = max(cut, LAST_ROUND_CUT)
     bonus = FESTIVAL_BONUS if "เทศกาล" in str(rnd.get("calendar", "")) else 0.0
     allow_probe = not practice and pres < PROBE_MAX_PRESSURE and left > 1
 
@@ -324,7 +324,7 @@ def classify_spec(cands: list[dict], spec_mem: tuple | None, last: bool, notes: 
 
 
 def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes: set,
-               lot_off: dict | None = None, spec_mem: tuple | None = None) -> list[dict]:
+               lot_off: dict | None = None, spec_mem: tuple | None = None, short: set | None = None) -> list[dict]:
     lot_off = lot_off or {}
     last = rounds_left(state, ctx) <= 1
     rfqs = {r["rfq_id"]: r for r in state["rfqs"]}
@@ -364,15 +364,32 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             progressed = True
         if not progressed:
             break
-    return [{"lot_id": lid, "rfq_id": rid, "bags": n, "markup": k_rfq[rid] + lot_off.get(lid, 0.0)}
+    plan = [{"lot_id": lid, "rfq_id": rid, "bags": n, "markup": k_rfq[rid] + lot_off.get(lid, 0.0)}
             for (lid, rid), n in alloc.items()]
+    if last and not state["round"]["kind"] == "practice":
+        plan = last_round_ladder(plan, rfqs, short or set(), ctx.notes)
+    return plan
+
+
+def last_round_ladder(plan: list[dict], rfqs: dict, short: set, notes: list) -> list[dict]:
+    """รอบสุดท้าย: ซองตามลำดับเดิม ซองแรกๆ ใช้ k ปกติ ซองท้ายสุดลด LAST_LADDER (เช่น −0.03, −0.06)
+    ซองของผู้ซื้อที่รอบก่อนซื้อไม่ครบไปอยู่ท้ายแถว = ได้ราคาต่ำก่อน · ซองเดียวก็ได้ขั้นต่ำสุด (กันเหลือ 1 กระสอบ)"""
+    plan = sorted(plan, key=lambda p: rfqs[p["rfq_id"]]["buyer"] in short)    # sort คงลำดับเดิมในแต่ละกลุ่ม
+    n, depth = len(plan), len(LAST_LADDER)
+    for pos, p in enumerate(plan):
+        delta = LAST_LADDER[max(0, depth - (n - pos))]
+        if delta < 0:
+            p["markup"] = min(p["markup"], max(FLOOR_LATE, p["markup"] + delta))
+    notes.append("last-round ladder: " + ", ".join(f"{p['rfq_id']}/{p['lot_id']}={p['markup']:.3f}" for p in plan)
+                 + f" · short buyers {sorted(short) or '-'}")
+    return plan
 
 
 def rule_plan(state: dict, ctx: Context, cands: list[dict]) -> list[dict]:
     """ใช้ได้ทั้งตอนปกติและตอน main.py เรียกเป็นทางสำรองเมื่อ decide() พัง"""
     L = learn(state, ctx)
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"]))
-    return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"])
+    return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["short"])
 
 
 # ---------------- 5. LLM (ไม่บังคับ) ----------------
@@ -460,5 +477,5 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")
     ctx.notes.append(f"fill {L['fill']:.2f} · lot offsets {L['lot_off'] or '-'}")
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pres)
-    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"]))
+    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["short"]))
     return offers, "rules+llm" if used_llm else "rules"
