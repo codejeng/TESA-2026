@@ -29,7 +29,7 @@ branch `tune-sandbox` · ทีม T23 · 18 พ.ย. 2026 · สถานะ: *
 | 3 | ป้าย calendar | **เห็นแค่ "ปกติ"** ไม่มี "เทศกาล" | ไม่ได้แก้ โค้ดหาคำย่อย `"เทศกาล"` ถ้าวันแข่งใช้คำอื่นจะไม่ได้ bonus แต่ไม่พัง |
 | 4 | `round_capacity_kg` / `capacity_left_kg` | **เป็น `null` ทุกรอบ** | `pressure()` ไปใช้ทาง "ไม่มีเพดาน" (เทียบกับแผนขายเท่าๆ กัน) และงบต่อรอบใช้ `PACE_NO_CAP=2.0` ค่าที่ได้ 0.5–1.0 สมเหตุสมผล ทางที่มีเพดาน (วันแข่ง) ยังไม่ได้ทดสอบกับตลาดจริง |
 | 5 | Specialty และ `min_screen` | **ไม่มี Specialty เลย** มีแค่ COMMERCIAL (`max_defect 7`, `max_moisture 12.5`) และ INSTANT (`max_defect 15`, `max_moisture 14`) | ตรวจไม่ได้ · `spec_ok` เช็ก `min_screen` อยู่แล้ว |
-| 6 | ไม่มี `strategy_crashed` / `batch_rejected` / `offer_rejected` | **ยืนยัน**: 0 ครั้งใน 7 เกม | — |
+| 6 | ไม่มี `strategy_crashed` / `batch_rejected` / `offer_rejected` | **ยืนยัน**: 0 ครั้งใน 6 เกม (36 รอบ) | — |
 
 ข้อ 4 คิดมือดูทางที่มีเพดาน: 24 กระสอบ, 8 รอบ, เพดาน ~4.5 กระสอบ/รอบ, fill 0.7 → pressure เริ่มต้น ≈ 24 ÷ (4.5 × 8 × 0.7) ≈ 0.95 สมเหตุสมผล ถ้า fill ตกเหลือ 0.5 จะได้ ≈ 1.33 → ลด k 0.017 และใช้ floor 0.85
 
@@ -104,7 +104,7 @@ k เฉลี่ยที่ขายได้: COMMERCIAL ≈ 0.99–1.01 · I
 
 ## เช็กลิสต์ก่อนแข่ง
 
-- [x] รันครบเกมไม่ล้ม: 7 เกมใน sandbox ไม่มี `strategy_crashed` หรือ `state_error` ค้าง
+- [x] รันครบเกมไม่ล้ม: 6 เกม (36 รอบ) ใน sandbox ไม่มี `strategy_crashed`, `state_error`, `batch_rejected`, `offer_rejected`
 - [x] `USE_LLM=0` ยังขายได้: ทุกเกมรันด้วย `USE_LLM=0` PR 0.92–0.98
 - [x] `decisions.jsonl` ครบทุกรอบ: มี `offers_sent` ทุกรอบ R1–R6 ทุกเกม รวมรอบที่ไม่มีอะไรจะยื่น (`source: "none"`)
 - [x] `python pack.py` สร้าง `handin.zip` ได้: 34 ไฟล์, 1.2 MB, **ไม่มี `.env`** (สไลด์ PDF > 5 MB ถูกข้าม) · `handin.zip` อยู่ใน `.gitignore`
