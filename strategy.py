@@ -51,6 +51,7 @@ TIGHT = 1.0          # pressure เกินนี้ = ขายไม่ทั
 URGENCY_SLOPE = 0.05 # pressure เกิน 1 ทุก 0.1 -> ลด k 0.005
 URGENCY_MAX = 0.04
 FESTIVAL_BONUS = 0.01
+LAST_ROUND_CUT = 0.05   # รอบจริงรอบสุดท้าย: ของที่ไม่ขายตอนนี้เหลือ 0.80 แน่ -> ลด k เท่านี้ (ไม่ต่ำกว่า FLOOR_LATE)
 PRACTICE_LADDER = (-0.03, 0.0, 0.03)    # รอบซ้อม: ยื่นหลายระดับเพื่อหยั่งตลาด (ถ้ารอบซ้อมตัดสต็อกจริง ให้ตั้ง (0, 0, 0))
 PACE_NO_CAP = 2.0
 
@@ -219,6 +220,8 @@ def price_rfqs(state: dict, ctx: Context, buyers: dict, pres: float) -> tuple[di
     tight = not practice and (pres > TIGHT or left <= 2)
     floor = FLOOR_LATE if tight else FLOOR_EARLY
     cut = 0.0 if practice else min(URGENCY_MAX, max(0.0, (pres - 1.0) * URGENCY_SLOPE))
+    if not practice and left <= 1:
+        cut = max(cut, LAST_ROUND_CUT)
     bonus = FESTIVAL_BONUS if "เทศกาล" in str(rnd.get("calendar", "")) else 0.0
     allow_probe = not practice and pres < PROBE_MAX_PRESSURE and left > 1
 
