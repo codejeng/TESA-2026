@@ -55,8 +55,10 @@ LAST_ROUND_CUT = 0.05   # รอบจริงรอบสุดท้าย: �
 PRACTICE_LADDER = (-0.03, 0.0, 0.03)    # รอบซ้อม: ยื่นหลายระดับเพื่อหยั่งตลาด (ถ้ารอบซ้อมตัดสต็อกจริง ให้ตั้ง (0, 0, 0))
 PACE_NO_CAP = 2.0
 
-MARGIN_DEFECT = 0.30     # เผื่อ noise ตอนเช็กสเปก
+MARGIN_DEFECT = 0.30     # ผ่านสเปกแต่ห่างขอบไม่ถึงเท่านี้ = "เฉียดขอบ" (ผลวัดตัวอย่างคลาดได้)
 MARGIN_MOIST = 0.15
+SPEC_PROBE_BAGS = 1      # ล็อตเฉียดขอบที่ยังไม่รู้ว่าผ่านสเปกนั้นจริงไหม: ยื่นได้เท่านี้ต่อรอบต่อสเปก
+                         # ผลเป็น ACCEPTED/PARTIAL/OUTBID = ผ่านจริง -> ยื่นเต็ม · SPEC_MISMATCH = ไม่ผ่าน -> ห้ามยื่นสเปกนั้นอีก
 
 LLM_MAX_DELTA = 0.02
 LLM_MAX_SECONDS = 20
@@ -81,6 +83,20 @@ def spec_ok(sample: dict, spec: dict, margin: bool = False) -> bool:
     return (sample["defect_pct"] <= spec["max_defect_pct"] - md
             and sample["moisture_pct"] <= spec["max_moisture_pct"] - mm
             and (spec["min_screen"] is None or sample["screen"] >= spec["min_screen"]))
+
+
+def spec_key(spec: dict) -> tuple:
+    return (spec["max_defect_pct"], spec["max_moisture_pct"], spec["min_screen"] or 0)
+
+
+def spec_known(lot_id: str, spec: dict, passed: set, failed: set) -> bool | None:
+    """True = เคยผ่านสเปกนี้ (หรือสเปกที่เข้มกว่า) จริง · False = เคย SPEC_MISMATCH กับสเปกนี้ (หรือที่หลวมกว่า) · None = ยังไม่รู้"""
+    d, m, s = spec_key(spec)
+    if any(l == lot_id and d <= fd and m <= fm and s >= fs for l, (fd, fm, fs) in failed):
+        return False
+    if any(l == lot_id and pd <= d and pm <= m and ps >= s for l, (pd, pm, ps) in passed):
+        return True
+    return None
 
 
 def rounds_left(state: dict, ctx: Context) -> int:
@@ -119,6 +135,11 @@ def learn(state: dict, ctx: Context) -> dict:
     boundary = {l["lot_id"]: near_boundary(l["sample"], ctx.rules) for l in state["lots"]}
     buyers, lot_off = {}, defaultdict(float)
     offered = filled = 0
+    passed, failed = set(), set()                     # {(lot_id, spec_key)} ที่รู้ผลจริงจากผู้ซื้อแล้ว
+    # memory เก่าที่ยังไม่เก็บ spec: เดาจาก buyer_type ถ้าทุก RFQ ของประเภทนั้นในรอบนี้ใช้สเปกเดียวกัน
+    type_specs = defaultdict(set)
+    for r in state["rfqs"]:
+        type_specs[r["buyer_type"]].add(spec_key(r["spec"]))
     rounds = sorted(mem.rounds, key=round_order) if mem else []
 
     for i, rnd in enumerate(rounds):
@@ -129,6 +150,13 @@ def learn(state: dict, ctx: Context) -> dict:
         entries = defaultdict(list)                   # buyer -> [(lot, status, base_k)]
         for o in rnd.get("my_offers") or []:
             s, m = sent.get((o["rfq_id"], o["lot_id"])), summ.get(o["rfq_id"])
+            if s:                                     # หยั่งสเปก: OUTBID ก็แปลว่าผ่านสเปกแล้ว (ผู้ซื้อคัดสเปกก่อนเรียงราคา)
+                key = spec_key(s["spec"]) if s.get("spec") else (
+                    next(iter(type_specs[s.get("buyer_type")])) if len(type_specs[s.get("buyer_type")]) == 1 else None)
+                if key and o["status"] in ("ACCEPTED", "PARTIAL", "OUTBID"):
+                    passed.add((o["lot_id"], key))
+                elif key and o["status"] == "SPEC_MISMATCH":
+                    failed.add((o["lot_id"], key))
             if not s or not m or o["status"] in ("SPEC_MISMATCH", "CANCELLED"):
                 continue
             entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]]))
@@ -194,7 +222,8 @@ def learn(state: dict, ctx: Context) -> dict:
             b["last"] = f"{rnd['round_id']}: {'/'.join(st_all) or '-'} -> {b['k']:.3f} ({why})"
 
     fill = min(1.0, max(0.3, filled / offered)) if offered >= 3 * BAG else FILL_DEFAULT
-    return {"buyers": buyers, "lot_off": {k: round(v, 3) for k, v in lot_off.items() if v}, "fill": fill}
+    return {"buyers": buyers, "lot_off": {k: round(v, 3) for k, v in lot_off.items() if v}, "fill": fill,
+            "spec": (passed, failed)}
 
 
 # ---------------- 2. ขายทันไหม ----------------
@@ -259,7 +288,7 @@ def candidates(state: dict, ctx: Context) -> list[dict]:
             if spec_ok(lot["sample"], r["spec"]):
                 out.append({"lot_id": lot["lot_id"], "rfq_id": r["rfq_id"], "buyer": r["buyer"],
                             "buyer_type": r["buyer_type"], "safe": spec_ok(lot["sample"], r["spec"], margin=True),
-                            "tv": ctx.tv[lot["lot_id"]]})
+                            "spec": r["spec"], "tv": ctx.tv[lot["lot_id"]]})
     return out
 
 
@@ -272,16 +301,41 @@ def round_budget_bags(state: dict, ctx: Context) -> int:
     return avail if left <= 1 else min(avail, math.ceil(avail / left * PACE_NO_CAP))
 
 
+def classify_spec(cands: list[dict], spec_mem: tuple | None, last: bool, notes: list | None = None) -> list[dict]:
+    """ok = ห่างขอบสเปก หรือเคยผ่านสเปกนี้จริง · probe = เฉียดขอบและยังไม่รู้ (ยื่นได้ SPEC_PROBE_BAGS)
+    เคย SPEC_MISMATCH -> ตัดทิ้ง · รอบสุดท้าย ล็อตที่ไม่มีทาง ok เลยยื่น probe ได้เต็ม (ไม่ขายก็เหลือแค่ 0.80)"""
+    passed, failed = spec_mem or (set(), set())
+    out = []
+    for c in cands:
+        known = spec_known(c["lot_id"], c["spec"], passed, failed)
+        if known is False:
+            if notes is not None:
+                notes.append(f"spec blocked {c['lot_id']}->{c['rfq_id']} (เคย SPEC_MISMATCH)")
+            continue
+        out.append({**c, "probe": not c["safe"] and known is None})
+    has_ok = {c["lot_id"] for c in out if not c["probe"]}
+    for c in out:
+        c["probe_limit"] = c["probe"] and not (last and c["lot_id"] not in has_ok)
+    if notes is not None:
+        pr = sorted({f"{c['lot_id']}~{spec_key(c['spec'])}" for c in out if c["probe"]})
+        if pr:
+            notes.append(f"spec probe: {', '.join(pr)}")
+    return out
+
+
 def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes: set,
-               lot_off: dict | None = None) -> list[dict]:
+               lot_off: dict | None = None, spec_mem: tuple | None = None) -> list[dict]:
     lot_off = lot_off or {}
     last = rounds_left(state, ctx) <= 1
     rfqs = {r["rfq_id"]: r for r in state["rfqs"]}
-    has_safe = {c["lot_id"] for c in cands if c["safe"]}
-    pairs = [c for c in cands if c["safe"] or last or c["lot_id"] not in has_safe]
+    pairs = classify_spec(cands, spec_mem, last, ctx.notes)
+    # best_k ของล็อตคิดจากทางที่ ok เท่านั้น: ซองหยั่งสเปก 1 กระสอบต้องไม่ทำให้กระสอบที่เหลือไม่มีที่ไป (SWITCH_GAP)
+    has_ok = {c["lot_id"] for c in pairs if not c["probe"]}
     best_k = defaultdict(float)
     for c in pairs:
-        best_k[c["lot_id"]] = max(best_k[c["lot_id"]], k_rfq[c["rfq_id"]])
+        if not c["probe"] or c["lot_id"] not in has_ok:
+            best_k[c["lot_id"]] = max(best_k[c["lot_id"]], k_rfq[c["rfq_id"]])
+    probe_used = defaultdict(int)                     # (lot, spec_key) -> กระสอบที่ใช้หยั่งรอบนี้
 
     stock = {l["lot_id"]: l["kg_available"] // BAG for l in state["lots"]}
     rfq_room = {i: (min(1, r["bags"]) if i in probes else r["bags"]) for i, r in rfqs.items()}
@@ -296,10 +350,13 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             if budget <= 0 or rfq_room[rid] <= 0:
                 continue
             opts = [c for c in pairs if c["rfq_id"] == rid and stock[c["lot_id"]] > 0
-                    and (last or k_rfq[rid] >= best_k[c["lot_id"]] - SWITCH_GAP)]
+                    and (last or k_rfq[rid] >= best_k[c["lot_id"]] - SWITCH_GAP)
+                    and not (c["probe_limit"] and probe_used[(c["lot_id"], spec_key(c["spec"]))] >= SPEC_PROBE_BAGS)]
             if not opts:
                 continue
-            c = min(opts, key=lambda c: (best_k[c["lot_id"]] - k_rfq[rid], not c["safe"], -c["tv"]))
+            c = min(opts, key=lambda c: (best_k[c["lot_id"]] - k_rfq[rid], c["probe"], -c["tv"]))
+            if c["probe"]:
+                probe_used[(c["lot_id"], spec_key(c["spec"]))] += 1
             alloc[(c["lot_id"], rid)] += 1
             stock[c["lot_id"]] -= 1
             rfq_room[rid] -= 1
@@ -315,7 +372,7 @@ def rule_plan(state: dict, ctx: Context, cands: list[dict]) -> list[dict]:
     """ใช้ได้ทั้งตอนปกติและตอน main.py เรียกเป็นทางสำรองเมื่อ decide() พัง"""
     L = learn(state, ctx)
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"]))
-    return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"])
+    return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"])
 
 
 # ---------------- 5. LLM (ไม่บังคับ) ----------------
@@ -403,5 +460,5 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")
     ctx.notes.append(f"fill {L['fill']:.2f} · lot offsets {L['lot_off'] or '-'}")
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pres)
-    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"]))
+    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"]))
     return offers, "rules+llm" if used_llm else "rules"

@@ -18,7 +18,8 @@ class Memory:
 
     def record_sent(self, round_id: str, offers: list[dict], state: dict, tv: dict) -> None:
         types = {r["rfq_id"]: r["buyer_type"] for r in state["rfqs"]}
-        self.sent[round_id] = [{**o, "buyer_type": types[o["rfq_id"]],
+        specs = {r["rfq_id"]: r["spec"] for r in state["rfqs"]}    # strategy.learn() uses it to learn which specs a lot really passes
+        self.sent[round_id] = [{**o, "buyer_type": types[o["rfq_id"]], "spec": specs[o["rfq_id"]],
                                 "markup": round(o["price_per_kg"] / tv[o["lot_id"]], 3)} for o in offers]
         self.save()
 
