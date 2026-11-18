@@ -1,0 +1,81 @@
+{
+ "calendar": [
+  {
+   "rounds": "1-8",
+   "label": "ปกติ",
+   "demand_weight": 1.0,
+   "specialty_share": null
+  }
+ ],
+ "rules": {
+  "bag_kg": 60,
+  "round_capacity": "each round a team may have at most ceil(factor × its total bags ÷ rounds) bags on offer",
+  "round_capacity_factor": 1.5,
+  "salvage_ratio": 0.8,
+  "true_value_formula": "TV = P0 × G(d) × M(m) × S(s)",
+  "p0": 120.0,
+  "defect_steps": [
+   {
+    "max_defect_pct": 1.0,
+    "step": 1.08,
+    "grade": "PREMIUM"
+   },
+   {
+    "max_defect_pct": 3.0,
+    "step": 1.04,
+    "grade": "GRADE_1"
+   },
+   {
+    "max_defect_pct": 5.0,
+    "step": 1.0,
+    "grade": "GRADE_2"
+   },
+   {
+    "max_defect_pct": 7.0,
+    "step": 0.96,
+    "grade": "GRADE_3"
+   },
+   {
+    "max_defect_pct": 15.0,
+    "step": 0.85,
+    "grade": "BELOW_STANDARD"
+   },
+   {
+    "max_defect_pct": 100.0,
+    "step": 0.6,
+    "grade": "REJECT"
+   }
+  ],
+  "G": "G(d) = (1 − d/100) × step(d)",
+  "M": "M = 1 if m ≤ 12.5; (1 − m/100)/(1 − 12.5/100) − 0.02 × (m − 12.5) if m ≤ 15.0; 0.6 above",
+  "moisture": {
+   "ref": 12.5,
+   "penalty_per_pp": 0.02,
+   "hard_limit": 15.0,
+   "hard_factor": 0.6
+  },
+  "screen_factors": {
+   "12": 0.92,
+   "13": 0.97,
+   "14": 1.0,
+   "15": 1.0,
+   "16": 1.03,
+   "17": 1.03,
+   "18": 1.06
+  },
+  "scoring": {
+   "pr_points": 80.0,
+   "appraisal_points": 20.0,
+   "appraisal_zero_at_mape": 0.1,
+   "leaderboard_freeze_after_round": 12
+  },
+  "timeline": {
+   "setup_s": 5,
+   "appraisal_s": 60,
+   "practice_rounds": 0,
+   "rounds": 8,
+   "open_s": 90,
+   "clearing_s": 8
+  }
+ }
+}

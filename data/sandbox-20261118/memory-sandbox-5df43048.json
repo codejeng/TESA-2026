@@ -1,0 +1,72 @@
+{
+ "sent": {
+  "R1": [
+   {
+    "rfq_id": "R1-03",
+    "lot_id": "LOT-T23-3",
+    "kg": 120,
+    "price_per_kg": 118.05,
+    "buyer_type": "COMMERCIAL",
+    "spec": {
+     "max_defect_pct": 7.0,
+     "max_moisture_pct": 12.5,
+     "min_screen": null
+    },
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-05",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 118.05,
+    "buyer_type": "COMMERCIAL",
+    "spec": {
+     "max_defect_pct": 7.0,
+     "max_moisture_pct": 12.5,
+     "min_screen": null
+    },
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-08",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 118.05,
+    "buyer_type": "COMMERCIAL",
+    "spec": {
+     "max_defect_pct": 7.0,
+     "max_moisture_pct": 12.5,
+     "min_screen": null
+    },
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-06",
+    "lot_id": "LOT-T23-1",
+    "kg": 60,
+    "price_per_kg": 109.27,
+    "buyer_type": "INSTANT",
+    "spec": {
+     "max_defect_pct": 15.0,
+     "max_moisture_pct": 15.0,
+     "min_screen": null
+    },
+    "markup": 0.93
+   },
+   {
+    "rfq_id": "R1-04",
+    "lot_id": "LOT-T23-1",
+    "kg": 60,
+    "price_per_kg": 109.27,
+    "buyer_type": "INSTANT",
+    "spec": {
+     "max_defect_pct": 15.0,
+     "max_moisture_pct": 15.0,
+     "min_screen": null
+    },
+    "markup": 0.93
+   }
+  ]
+ },
+ "rounds": []
+}

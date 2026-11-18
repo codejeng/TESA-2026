@@ -2,7 +2,7 @@
 
 agent: branch `tune-sandbox` commit `1771d29` (v2 + หยั่งสเปก + ไล่ราคารอบสุดท้าย) · `USE_LLM=0` · ทีม T23
 
-ไฟล์ข้อมูลดิบอยู่ใน `logs/` (ชื่อไฟล์อยู่ในตารางแต่ละเกม) · สร้างสรุปซ้ำได้ด้วย `.venv/bin/python tools/report.py --rounds --noise`
+ข้อมูลดิบ: `data/sandbox-20261118/` (สำเนา `logs/`) · รายรอบ: `SANDBOX-ROUNDS.md` · สร้างสรุปซ้ำได้ด้วย `.venv/bin/python tools/report.py --rounds --noise`
 
 ## ค่าตั้งของตลาดฝึกตั้งแต่ 09:10
 

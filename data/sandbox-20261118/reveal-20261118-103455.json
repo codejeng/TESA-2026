@@ -1,0 +1,193 @@
+{
+ "game_tag": "c4fd7d50",
+ "saved_at": "20261118-103455",
+ "standings": {
+  "revenue_thb": 210208.8,
+  "kg_sold": 1740,
+  "kg_remaining": 360,
+  "kg_total": 2100,
+  "avg_price_per_kg": 120.81
+ },
+ "lots": [
+  {
+   "lot_id": "LOT-T23-1",
+   "kg_total": 480,
+   "kg_remaining": 0,
+   "kg_in_open_offers": 0,
+   "kg_available": 0,
+   "origin": "สุราษฎร์ธานี - ท่าชนะ",
+   "process": "Honey",
+   "sample": {
+    "defect_pct": 0.6,
+    "moisture_pct": 11.1,
+    "screen": 17
+   }
+  },
+  {
+   "lot_id": "LOT-T23-2",
+   "kg_total": 420,
+   "kg_remaining": 0,
+   "kg_in_open_offers": 0,
+   "kg_available": 0,
+   "origin": "ชุมพร - หลังสวน",
+   "process": "Natural (Dry)",
+   "sample": {
+    "defect_pct": 6.8,
+    "moisture_pct": 11.5,
+    "screen": 16
+   }
+  },
+  {
+   "lot_id": "LOT-T23-3",
+   "kg_total": 360,
+   "kg_remaining": 0,
+   "kg_in_open_offers": 0,
+   "kg_available": 0,
+   "origin": "ชุมพร - ท่าแซะ",
+   "process": "Honey",
+   "sample": {
+    "defect_pct": 2.5,
+    "moisture_pct": 11.9,
+    "screen": 14
+   }
+  },
+  {
+   "lot_id": "LOT-T23-4",
+   "kg_total": 360,
+   "kg_remaining": 360,
+   "kg_in_open_offers": 0,
+   "kg_available": 360,
+   "origin": "ชุมพร - ปะทิว",
+   "process": "Honey",
+   "sample": {
+    "defect_pct": 12.6,
+    "moisture_pct": 14.6,
+    "screen": 13
+   }
+  },
+  {
+   "lot_id": "LOT-T23-5",
+   "kg_total": 480,
+   "kg_remaining": 0,
+   "kg_in_open_offers": 0,
+   "kg_available": 0,
+   "origin": "ระนอง - กระบุรี",
+   "process": "Honey",
+   "sample": {
+    "defect_pct": 4.2,
+    "moisture_pct": 12.3,
+    "screen": 16
+   }
+  }
+ ],
+ "reveal": {
+  "lots": [
+   {
+    "lot_id": "LOT-T23-1",
+    "true": {
+     "defect_pct": 0.7,
+     "moisture_pct": 11.07,
+     "screen": 17
+    },
+    "sample": {
+     "defect_pct": 0.6,
+     "moisture_pct": 11.1,
+     "screen": 17
+    },
+    "true_grade": "PREMIUM",
+    "true_value_per_kg": 132.55,
+    "your_estimate": {
+     "grade": "PREMIUM",
+     "est_value_per_kg": 132.69
+    }
+   },
+   {
+    "lot_id": "LOT-T23-2",
+    "true": {
+     "defect_pct": 6.48,
+     "moisture_pct": 11.23,
+     "screen": 16
+    },
+    "sample": {
+     "defect_pct": 6.8,
+     "moisture_pct": 11.5,
+     "screen": 16
+    },
+    "true_grade": "GRADE_3",
+    "true_value_per_kg": 110.97,
+    "your_estimate": {
+     "grade": "GRADE_3",
+     "est_value_per_kg": 110.59
+    }
+   },
+   {
+    "lot_id": "LOT-T23-3",
+    "true": {
+     "defect_pct": 2.48,
+     "moisture_pct": 11.94,
+     "screen": 14
+    },
+    "sample": {
+     "defect_pct": 2.5,
+     "moisture_pct": 11.9,
+     "screen": 14
+    },
+    "true_grade": "GRADE_1",
+    "true_value_per_kg": 121.7,
+    "your_estimate": {
+     "grade": "GRADE_1",
+     "est_value_per_kg": 121.68
+    }
+   },
+   {
+    "lot_id": "LOT-T23-4",
+    "true": {
+     "defect_pct": 12.79,
+     "moisture_pct": 15.01,
+     "screen": 13
+    },
+    "sample": {
+     "defect_pct": 12.6,
+     "moisture_pct": 14.6,
+     "screen": 13
+    },
+    "true_grade": "BELOW_STANDARD",
+    "true_value_per_kg": 51.77,
+    "your_estimate": {
+     "grade": "BELOW_STANDARD",
+     "est_value_per_kg": 80.77
+    }
+   },
+   {
+    "lot_id": "LOT-T23-5",
+    "true": {
+     "defect_pct": 3.9,
+     "moisture_pct": 13.22,
+     "screen": 15
+    },
+    "sample": {
+     "defect_pct": 4.2,
+     "moisture_pct": 12.3,
+     "screen": 16
+    },
+    "true_grade": "GRADE_2",
+    "true_value_per_kg": 112.71,
+    "your_estimate": {
+     "grade": "GRADE_2",
+     "est_value_per_kg": 118.41
+    }
+   }
+  ],
+  "score": {
+   "team_id": "T23",
+   "name": "See-It 2026 · ขอนแก่น",
+   "pr": 0.9927,
+   "mape": 0.1085,
+   "appraisal_at": 5.379710912704468,
+   "pr_score": 80.0,
+   "appraisal_score": 0.0,
+   "total": 80.0,
+   "rank": 1
+  }
+ }
+}

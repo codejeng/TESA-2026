@@ -1,0 +1,950 @@
+{
+ "sent": {
+  "R1": [
+   {
+    "rfq_id": "R1-01",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-08",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-04",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-06",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R1-07",
+    "lot_id": "LOT-T23-2",
+    "kg": 60,
+    "price_per_kg": 118.23,
+    "buyer_type": "INSTANT",
+    "markup": 0.93
+   },
+   {
+    "rfq_id": "R1-02",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 107.47,
+    "buyer_type": "INSTANT",
+    "markup": 0.93
+   },
+   {
+    "rfq_id": "R1-03",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 107.47,
+    "buyer_type": "INSTANT",
+    "markup": 0.93
+   }
+  ],
+  "R2": [
+   {
+    "rfq_id": "R2-02",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R2-05",
+    "lot_id": "LOT-T23-4",
+    "kg": 60,
+    "price_per_kg": 113.17,
+    "buyer_type": "COMMERCIAL",
+    "markup": 0.99
+   },
+   {
+    "rfq_id": "R2-03",
+    "lot_id": "LOT-T23-3",
+    "kg": 120,
+    "price_per_kg": 109.2,
+    "buyer_type": "INSTANT",
+    "markup": 0.945
+   },
+   {
+    "rfq_id": "R2-08",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 109.2,
+    "buyer_type": "INSTANT",
+    "markup": 0.945
+   },
+   {
+    "rfq_id": "R2-06",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 106.89,
+    "buyer_type": "INSTANT",
+    "markup": 0.925
+   },
+   {
+    "rfq_id": "R2-07",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 106.89,
+    "buyer_type": "INSTANT",
+    "markup": 0.925
+   }
+  ],
+  "R3": [
+   {
+    "rfq_id": "R3-02",
+    "lot_id": "LOT-T23-3",
+    "kg": 120,
+    "price_per_kg": 109.78,
+    "buyer_type": "INSTANT",
+    "markup": 0.95
+   },
+   {
+    "rfq_id": "R3-07",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 108.63,
+    "buyer_type": "INSTANT",
+    "markup": 0.94
+   },
+   {
+    "rfq_id": "R3-03",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 110.94,
+    "buyer_type": "INSTANT",
+    "markup": 0.96
+   },
+   {
+    "rfq_id": "R3-06",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 109.78,
+    "buyer_type": "INSTANT",
+    "markup": 0.95
+   }
+  ],
+  "R4": [
+   {
+    "rfq_id": "R4-02",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 112.09,
+    "buyer_type": "INSTANT",
+    "markup": 0.97
+   },
+   {
+    "rfq_id": "R4-08",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 110.94,
+    "buyer_type": "INSTANT",
+    "markup": 0.96
+   }
+  ],
+  "R5": [
+   {
+    "rfq_id": "R5-01",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 113.25,
+    "buyer_type": "INSTANT",
+    "markup": 0.98
+   }
+  ],
+  "R6": [
+   {
+    "rfq_id": "R6-01",
+    "lot_id": "LOT-T23-3",
+    "kg": 60,
+    "price_per_kg": 120.88,
+    "buyer_type": "COMMERCIAL",
+    "markup": 1.046
+   }
+  ]
+ },
+ "rounds": [
+  {
+   "round_id": "R1",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00076",
+     "round_id": "R1",
+     "rfq_id": "R1-01",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00077",
+     "round_id": "R1",
+     "rfq_id": "R1-08",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00078",
+     "round_id": "R1",
+     "rfq_id": "R1-04",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00079",
+     "round_id": "R1",
+     "rfq_id": "R1-06",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "OUTBID",
+     "filled_kg": 0
+    },
+    {
+     "offer_id": "O00080",
+     "round_id": "R1",
+     "rfq_id": "R1-07",
+     "lot_id": "LOT-T23-2",
+     "kg": 60,
+     "price_per_kg": 118.23,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00081",
+     "round_id": "R1",
+     "rfq_id": "R1-02",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 107.47,
+     "status": "OUTBID",
+     "filled_kg": 0
+    },
+    {
+     "offer_id": "O00082",
+     "round_id": "R1",
+     "rfq_id": "R1-03",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 107.47,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R1-01",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 720,
+     "offers": 6,
+     "price_min": 108.92,
+     "price_max": 126.99,
+     "price_avg": 115.38
+    },
+    {
+     "rfq_id": "R1-02",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 660,
+     "bought_kg": 660,
+     "offers": 20,
+     "price_min": 68.2,
+     "price_max": 110.51,
+     "price_avg": 91.22
+    },
+    {
+     "rfq_id": "R1-03",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 300,
+     "bought_kg": 60,
+     "offers": 4,
+     "price_min": 107.47,
+     "price_max": 107.47,
+     "price_avg": 107.47
+    },
+    {
+     "rfq_id": "R1-04",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 600,
+     "bought_kg": 600,
+     "offers": 11,
+     "price_min": 90.88,
+     "price_max": 117.91,
+     "price_avg": 102.3
+    },
+    {
+     "rfq_id": "R1-05",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 240,
+     "bought_kg": 120,
+     "offers": 10,
+     "price_min": 111.51,
+     "price_max": 111.51,
+     "price_avg": 111.51
+    },
+    {
+     "rfq_id": "R1-06",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 420,
+     "bought_kg": 420,
+     "offers": 10,
+     "price_min": 84.58,
+     "price_max": 119.62,
+     "price_avg": 112.29
+    },
+    {
+     "rfq_id": "R1-07",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 780,
+     "bought_kg": 660,
+     "offers": 13,
+     "price_min": 77.77,
+     "price_max": 118.23,
+     "price_avg": 95.16
+    },
+    {
+     "rfq_id": "R1-08",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 720,
+     "offers": 8,
+     "price_min": 108.84,
+     "price_max": 122.44,
+     "price_avg": 115.02
+    }
+   ]
+  },
+  {
+   "round_id": "R2",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00153",
+     "round_id": "R2",
+     "rfq_id": "R2-02",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00154",
+     "round_id": "R2",
+     "rfq_id": "R2-05",
+     "lot_id": "LOT-T23-4",
+     "kg": 60,
+     "price_per_kg": 113.17,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00155",
+     "round_id": "R2",
+     "rfq_id": "R2-03",
+     "lot_id": "LOT-T23-3",
+     "kg": 120,
+     "price_per_kg": 109.2,
+     "status": "OUTBID",
+     "filled_kg": 0
+    },
+    {
+     "offer_id": "O00156",
+     "round_id": "R2",
+     "rfq_id": "R2-08",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 109.2,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00157",
+     "round_id": "R2",
+     "rfq_id": "R2-06",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 106.89,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00158",
+     "round_id": "R2",
+     "rfq_id": "R2-07",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 106.89,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R2-01",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 300,
+     "bought_kg": 300,
+     "offers": 3,
+     "price_min": 114.83,
+     "price_max": 124.74,
+     "price_avg": 120.72
+    },
+    {
+     "rfq_id": "R2-02",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 780,
+     "bought_kg": 780,
+     "offers": 10,
+     "price_min": 86.86,
+     "price_max": 128.73,
+     "price_avg": 113.08
+    },
+    {
+     "rfq_id": "R2-03",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 780,
+     "bought_kg": 780,
+     "offers": 21,
+     "price_min": 81.07,
+     "price_max": 112.37,
+     "price_avg": 102.12
+    },
+    {
+     "rfq_id": "R2-04",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 600,
+     "bought_kg": 600,
+     "offers": 5,
+     "price_min": 104.53,
+     "price_max": 123.62,
+     "price_avg": 115.98
+    },
+    {
+     "rfq_id": "R2-05",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 780,
+     "bought_kg": 780,
+     "offers": 7,
+     "price_min": 106.76,
+     "price_max": 133.03,
+     "price_avg": 116.78
+    },
+    {
+     "rfq_id": "R2-06",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 660,
+     "bought_kg": 660,
+     "offers": 13,
+     "price_min": 79.49,
+     "price_max": 112.65,
+     "price_avg": 99.46
+    },
+    {
+     "rfq_id": "R2-07",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 60,
+     "bought_kg": 60,
+     "offers": 3,
+     "price_min": 106.89,
+     "price_max": 106.89,
+     "price_avg": 106.89
+    },
+    {
+     "rfq_id": "R2-08",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 540,
+     "bought_kg": 540,
+     "offers": 14,
+     "price_min": 63.81,
+     "price_max": 109.2,
+     "price_avg": 98.1
+    }
+   ]
+  },
+  {
+   "round_id": "R3",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00229",
+     "round_id": "R3",
+     "rfq_id": "R3-02",
+     "lot_id": "LOT-T23-3",
+     "kg": 120,
+     "price_per_kg": 109.78,
+     "status": "OUTBID",
+     "filled_kg": 0
+    },
+    {
+     "offer_id": "O00230",
+     "round_id": "R3",
+     "rfq_id": "R3-07",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 108.63,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00231",
+     "round_id": "R3",
+     "rfq_id": "R3-03",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 110.94,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    },
+    {
+     "offer_id": "O00232",
+     "round_id": "R3",
+     "rfq_id": "R3-06",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 109.78,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R3-01",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 660,
+     "bought_kg": 660,
+     "offers": 9,
+     "price_min": 105.06,
+     "price_max": 126.12,
+     "price_avg": 113.64
+    },
+    {
+     "rfq_id": "R3-02",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 720,
+     "bought_kg": 720,
+     "offers": 29,
+     "price_min": 82.83,
+     "price_max": 115.09,
+     "price_avg": 104.92
+    },
+    {
+     "rfq_id": "R3-03",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 420,
+     "bought_kg": 300,
+     "offers": 5,
+     "price_min": 81.22,
+     "price_max": 114.11,
+     "price_avg": 95.28
+    },
+    {
+     "rfq_id": "R3-04",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 600,
+     "bought_kg": 600,
+     "offers": 8,
+     "price_min": 106.97,
+     "price_max": 128.73,
+     "price_avg": 116.14
+    },
+    {
+     "rfq_id": "R3-05",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 540,
+     "bought_kg": 540,
+     "offers": 5,
+     "price_min": 101.99,
+     "price_max": 123.49,
+     "price_avg": 114.21
+    },
+    {
+     "rfq_id": "R3-06",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 120,
+     "bought_kg": 60,
+     "offers": 3,
+     "price_min": 109.78,
+     "price_max": 109.78,
+     "price_avg": 109.78
+    },
+    {
+     "rfq_id": "R3-07",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 720,
+     "bought_kg": 60,
+     "offers": 7,
+     "price_min": 108.63,
+     "price_max": 108.63,
+     "price_avg": 108.63
+    },
+    {
+     "rfq_id": "R3-08",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 660,
+     "bought_kg": 660,
+     "offers": 8,
+     "price_min": 105.95,
+     "price_max": 125.83,
+     "price_avg": 113.51
+    }
+   ]
+  },
+  {
+   "round_id": "R4",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00297",
+     "round_id": "R4",
+     "rfq_id": "R4-02",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 112.09,
+     "status": "ABOVE_LIMIT",
+     "filled_kg": 0
+    },
+    {
+     "offer_id": "O00298",
+     "round_id": "R4",
+     "rfq_id": "R4-08",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 110.94,
+     "status": "ACCEPTED",
+     "filled_kg": 60
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R4-01",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 300,
+     "bought_kg": 300,
+     "offers": 4,
+     "price_min": 83.44,
+     "price_max": 111.77,
+     "price_avg": 100.44
+    },
+    {
+     "rfq_id": "R4-02",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 900,
+     "bought_kg": 840,
+     "offers": 26,
+     "price_min": 81.36,
+     "price_max": 114.19,
+     "price_avg": 97.32
+    },
+    {
+     "rfq_id": "R4-03",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 480,
+     "bought_kg": 480,
+     "offers": 5,
+     "price_min": 114.35,
+     "price_max": 125.19,
+     "price_avg": 120.19
+    },
+    {
+     "rfq_id": "R4-04",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 720,
+     "offers": 9,
+     "price_min": 108.75,
+     "price_max": 128.73,
+     "price_avg": 119.5
+    },
+    {
+     "rfq_id": "R4-05",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 540,
+     "bought_kg": 540,
+     "offers": 8,
+     "price_min": 109.43,
+     "price_max": 123.49,
+     "price_avg": 119.8
+    },
+    {
+     "rfq_id": "R4-06",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 360,
+     "bought_kg": 0,
+     "offers": 7,
+     "price_min": null,
+     "price_max": null,
+     "price_avg": null
+    },
+    {
+     "rfq_id": "R4-07",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 360,
+     "offers": 3,
+     "price_min": 108.84,
+     "price_max": 122.14,
+     "price_avg": 116.64
+    },
+    {
+     "rfq_id": "R4-08",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 480,
+     "bought_kg": 180,
+     "offers": 4,
+     "price_min": 110.94,
+     "price_max": 111.2,
+     "price_avg": 111.11
+    }
+   ]
+  },
+  {
+   "round_id": "R5",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00356",
+     "round_id": "R5",
+     "rfq_id": "R5-01",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 113.25,
+     "status": "ABOVE_LIMIT",
+     "filled_kg": 0
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R5-01",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 780,
+     "bought_kg": 120,
+     "offers": 11,
+     "price_min": 89.88,
+     "price_max": 89.88,
+     "price_avg": 89.88
+    },
+    {
+     "rfq_id": "R5-02",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 600,
+     "bought_kg": 360,
+     "offers": 3,
+     "price_min": 125.19,
+     "price_max": 128.16,
+     "price_avg": 127.67
+    },
+    {
+     "rfq_id": "R5-03",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 600,
+     "bought_kg": 600,
+     "offers": 7,
+     "price_min": 108.92,
+     "price_max": 126.99,
+     "price_avg": 118.44
+    },
+    {
+     "rfq_id": "R5-04",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 300,
+     "bought_kg": 300,
+     "offers": 7,
+     "price_min": 92.29,
+     "price_max": 118.62,
+     "price_avg": 104.63
+    },
+    {
+     "rfq_id": "R5-05",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 540,
+     "bought_kg": 540,
+     "offers": 7,
+     "price_min": 106.76,
+     "price_max": 133.03,
+     "price_avg": 120.51
+    },
+    {
+     "rfq_id": "R5-06",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 900,
+     "bought_kg": 900,
+     "offers": 19,
+     "price_min": 80.36,
+     "price_max": 112.89,
+     "price_avg": 98.68
+    },
+    {
+     "rfq_id": "R5-07",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 300,
+     "offers": 4,
+     "price_min": 111.02,
+     "price_max": 124.58,
+     "price_avg": 120.29
+    }
+   ]
+  },
+  {
+   "round_id": "R6",
+   "kind": "real",
+   "my_offers": [
+    {
+     "offer_id": "O00396",
+     "round_id": "R6",
+     "rfq_id": "R6-01",
+     "lot_id": "LOT-T23-3",
+     "kg": 60,
+     "price_per_kg": 120.88,
+     "status": "OUTBID",
+     "filled_kg": 0
+    }
+   ],
+   "market_summary": [
+    {
+     "rfq_id": "R6-01",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 720,
+     "offers": 7,
+     "price_min": 106.76,
+     "price_max": 133.03,
+     "price_avg": 114.03
+    },
+    {
+     "rfq_id": "R6-02",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 840,
+     "bought_kg": 360,
+     "offers": 13,
+     "price_min": 82.09,
+     "price_max": 112.97,
+     "price_avg": 97.55
+    },
+    {
+     "rfq_id": "R6-03",
+     "buyer": "5 อินสแตนท์ไทย",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 720,
+     "bought_kg": 180,
+     "offers": 7,
+     "price_min": 102.64,
+     "price_max": 115.42,
+     "price_avg": 106.9
+    },
+    {
+     "rfq_id": "R6-04",
+     "buyer": "6 ทรีอินวันฟู้ดส์",
+     "buyer_type": "INSTANT",
+     "wanted_kg": 480,
+     "bought_kg": 480,
+     "offers": 6,
+     "price_min": 86.58,
+     "price_max": 128.73,
+     "price_avg": 106.88
+    },
+    {
+     "rfq_id": "R6-05",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 540,
+     "bought_kg": 120,
+     "offers": 1,
+     "price_min": 123.49,
+     "price_max": 123.49,
+     "price_avg": 123.49
+    },
+    {
+     "rfq_id": "R6-06",
+     "buyer": "4 ชุมพรคั่วบด",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 480,
+     "bought_kg": 360,
+     "offers": 1,
+     "price_min": 115.55,
+     "price_max": 115.55,
+     "price_avg": 115.55
+    },
+    {
+     "rfq_id": "R6-07",
+     "buyer": "3 สยามคอมเมิร์ซ",
+     "buyer_type": "COMMERCIAL",
+     "wanted_kg": 720,
+     "bought_kg": 420,
+     "offers": 5,
+     "price_min": 108.39,
+     "price_max": 126.39,
+     "price_avg": 119.96
+    }
+   ]
+  }
+ ]
+}

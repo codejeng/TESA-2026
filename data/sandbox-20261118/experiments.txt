@@ -1,0 +1,5 @@
+EXPERIMENT A start 01:51:27
+EXPERIMENT SL (spec probe + last-round ladder, 6a7adfd) start 02:20:39
+EXPERIMENT SL restarted with 1771d29 (limited_buyers) 02:23:41 before R1 of game started 02:20:40
+  (correction: 02:20:40 was the old closed game re-seen at startup; the first SL game has not started yet, so all SL games run 1771d29)
+09:28 restart SL agent + reveal watcher under systemd-inhibit (laptop suspended 09:16-09:23; game 1a781f50 missed R5-R7 -> invalid)
