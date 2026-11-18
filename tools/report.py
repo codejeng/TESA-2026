@@ -157,9 +157,11 @@ def game_report(mem_path: Path, mem: dict, seg: dict | None, rev: dict | None) -
     if rev:
         truth = reveal_lots(rev)
         est = (seg or {}).get("tv") or {}
-        errs = [abs(est[l] - t["tv"]) / t["tv"] for l, t in truth.items() if l in est and t.get("tv")]
-        out["mape"] = round(st.mean(errs), 4) if errs else None
         lots = {l["lot_id"]: l for l in rev.get("lots") or []}
+        # the market weights each lot's error by its kg (matches reveal score.mape)
+        errs = [(abs(est[l] - t["tv"]) / t["tv"], lots[l]["kg_total"]) for l, t in truth.items()
+                if l in est and l in lots and t.get("tv")]
+        out["mape"] = round(sum(e * w for e, w in errs) / sum(w for _, w in errs), 4) if errs else None
         total_tv = sum(t["tv"] * lots[l]["kg_total"] for l, t in truth.items() if l in lots and t.get("tv"))
         left_tv = sum(t["tv"] * lots[l]["kg_remaining"] for l, t in truth.items() if l in lots and t.get("tv"))
         if total_tv and standings:
