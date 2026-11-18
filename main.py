@@ -123,7 +123,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
                 log("strategy_crashed", error=repr(e))
                 offers, source = strategy.guard(state, ctx, strategy.rule_plan(state, ctx, strategy.candidates(state, ctx))), "rules"
             sent = send_offers(api, offers) if offers else []
-            memory.record_sent(rid, offers, state, tv)
+            memory.record_sent(rid, offers, state, tv, ctx.offer_tv)
             log("offers_sent", round=rid, source=source, n=len(sent), kg=sum(o["kg"] for o in sent),
                 seconds=round(time.time() - t0, 1), offers=offers, notes=ctx.notes)
 

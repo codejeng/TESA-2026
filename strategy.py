@@ -20,6 +20,8 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from appraisal import true_value
+
 BAG = 60
 
 # ---------------- ตัวเลขที่จูนได้ ----------------
@@ -60,6 +62,9 @@ MARGIN_DEFECT = 0.30     # ผ่านสเปกแต่ห่างขอ�
 MARGIN_MOIST = 0.15
 SPEC_PROBE_BAGS = 1      # ล็อตเฉียดขอบที่ยังไม่รู้ว่าผ่านสเปกนั้นจริงไหม: ยื่นได้เท่านี้ต่อรอบต่อสเปก
                          # ผลเป็น ACCEPTED/PARTIAL/OUTBID = ผ่านจริง -> ยื่นเต็ม · SPEC_MISMATCH = ไม่ผ่าน -> ห้ามยื่นสเปกนั้นอีก
+OVER_MOIST = 1.0         # ตัวอย่างเกินสเปกไม่เกินเท่านี้ ค่าจริงอาจผ่าน -> หยั่ง 1 กระสอบ/รอบ ไปยังสเปกที่หลวมที่สุด
+OVER_DEFECT = 0.5
+OVER_SCREEN = 1
 
 LLM_MAX_DELTA = 0.02
 LLM_MAX_SECONDS = 20
@@ -76,6 +81,9 @@ class Context:
     llm: object = None
     seconds_left: float = 999
     notes: list = field(default_factory=list)
+    tv_price: dict | None = None      # lot -> TV ที่ใช้ตั้งราคา (learn(): ปรับตามสเปกที่รู้ว่าผ่านจริง) · None = ใช้ tv
+    spec_sample: dict | None = None   # lot -> ค่าคุณภาพที่ใช้เช็กสเปก (ตัวอย่างที่ตัดด้วยสเปกที่ผ่านจริง)
+    offer_tv: dict = field(default_factory=dict)   # (rfq_id, lot_id) -> TV ที่ใช้คิดราคาซองนั้น (main.py เก็บลง memory)
 
 
 # ---------------- ตัวช่วย ----------------
@@ -84,6 +92,24 @@ def spec_ok(sample: dict, spec: dict, margin: bool = False) -> bool:
     return (sample["defect_pct"] <= spec["max_defect_pct"] - md
             and sample["moisture_pct"] <= spec["max_moisture_pct"] - mm
             and (spec["min_screen"] is None or sample["screen"] >= spec["min_screen"]))
+
+
+def clip_to_spec(sample: dict, spec: dict) -> dict:
+    """ค่าคุณภาพที่ "อย่างแย่สุด" ยังผ่านสเปกนี้ (ใช้เมื่อรู้ว่าผ่านจริง หรือเพื่อตั้งราคาซองหยั่ง)"""
+    return {"defect_pct": min(sample["defect_pct"], spec["max_defect_pct"]),
+            "moisture_pct": min(sample["moisture_pct"], spec["max_moisture_pct"]),
+            "screen": max(sample["screen"], spec["min_screen"] or 0)}
+
+
+def over_spec(sample: dict, spec: dict, rules: dict) -> bool:
+    """ไม่ผ่านสเปกตามตัวอย่าง แต่เกินไม่มาก (OVER_*) ค่าจริงอาจผ่าน · ราคาที่ตัดตามสเปกต้องไม่ติดโทษ hard limit"""
+    if spec_ok(sample, spec):
+        return False
+    if (sample["defect_pct"] - spec["max_defect_pct"] > OVER_DEFECT
+            or sample["moisture_pct"] - spec["max_moisture_pct"] > OVER_MOIST
+            or (spec["min_screen"] or 0) - sample["screen"] > OVER_SCREEN):
+        return False
+    return clip_to_spec(sample, spec)["moisture_pct"] <= rules["moisture"]["hard_limit"]
 
 
 def spec_key(spec: dict) -> tuple:
@@ -225,8 +251,19 @@ def learn(state: dict, ctx: Context) -> dict:
             b["last"] = f"{rnd['round_id']}: {'/'.join(st_all) or '-'} -> {b['k']:.3f} ({why})"
 
     fill = min(1.0, max(0.3, filled / offered)) if offered >= 3 * BAG else FILL_DEFAULT
+
+    # ค่าคุณภาพสำหรับเช็กสเปกและตั้งราคา: ล็อตที่เคยผ่านสเปกจริง ค่าจริงต้องอยู่ในสเปกนั้น -> ตัดตัวอย่างด้วยสเปกที่ผ่าน
+    spec_sample, tv_price = {}, {}
+    for lot in state["lots"]:
+        ss = dict(lot["sample"])
+        for l, (pd, pm, ps) in passed:
+            if l == lot["lot_id"]:
+                ss = clip_to_spec(ss, {"max_defect_pct": pd, "max_moisture_pct": pm, "min_screen": ps or None})
+        spec_sample[lot["lot_id"]] = ss
+        tv_price[lot["lot_id"]] = round(true_value(ctx.rules, ss), 2) if ss != lot["sample"] else ctx.tv[lot["lot_id"]]
     return {"buyers": buyers, "lot_off": {k: round(v, 3) for k, v in lot_off.items() if v}, "fill": fill,
-            "spec": (passed, failed), "limited_buyers": last_limited if rounds else set()}
+            "spec": (passed, failed), "limited_buyers": last_limited if rounds else set(),
+            "spec_sample": spec_sample, "tv_price": tv_price}
 
 
 # ---------------- 2. ขายทันไหม ----------------
@@ -281,15 +318,28 @@ def price_rfqs(state: dict, ctx: Context, buyers: dict, pres: float) -> tuple[di
 
 # ---------------- 4. แจกกระสอบ ----------------
 def candidates(state: dict, ctx: Context) -> list[dict]:
+    """คู่ (ล็อต × RFQ) ที่ยื่นได้ · tv = TV ที่ใช้ตั้งราคาคู่นั้น
+    over = ตัวอย่างเกินสเปกเล็กน้อย (หยั่งเฉพาะสเปกที่หลวมที่สุดของล็อตนั้น ราคาคิดจากค่าที่ตัดตามสเปก)"""
+    ss_all = ctx.spec_sample or {}
+    tvp = ctx.tv_price or ctx.tv
     out = []
     for lot in state["lots"]:
         if lot["kg_available"] < BAG:
             continue
+        lid = lot["lot_id"]
+        ss = ss_all.get(lid, lot["sample"])
+        over = []
         for r in state["rfqs"]:
-            if spec_ok(lot["sample"], r["spec"]):
-                out.append({"lot_id": lot["lot_id"], "rfq_id": r["rfq_id"], "buyer": r["buyer"],
-                            "buyer_type": r["buyer_type"], "safe": spec_ok(lot["sample"], r["spec"], margin=True),
-                            "spec": r["spec"], "tv": ctx.tv[lot["lot_id"]]})
+            base = {"lot_id": lid, "rfq_id": r["rfq_id"], "buyer": r["buyer"], "buyer_type": r["buyer_type"],
+                    "spec": r["spec"]}
+            if spec_ok(ss, r["spec"]):
+                out.append({**base, "safe": spec_ok(ss, r["spec"], margin=True), "over": False, "tv": tvp[lid]})
+            elif over_spec(ss, r["spec"], ctx.rules):
+                over.append({**base, "safe": False, "over": True,
+                             "tv": round(true_value(ctx.rules, clip_to_spec(ss, r["spec"])), 2)})
+        if over:
+            loose = max((spec_key(c["spec"]) for c in over), key=lambda k: (k[1], k[0], -k[2]))   # ชื้นได้มากสุด > เสียได้มากสุด > ขนาดต่ำสุด
+            out += [c for c in over if spec_key(c["spec"]) == loose]
     return out
 
 
@@ -316,7 +366,7 @@ def classify_spec(cands: list[dict], spec_mem: tuple | None, last: bool, notes: 
         out.append({**c, "probe": not c["safe"] and known is None})
     has_ok = {c["lot_id"] for c in out if not c["probe"]}
     for c in out:
-        c["probe_limit"] = c["probe"] and not (last and c["lot_id"] not in has_ok)
+        c["probe_limit"] = c["probe"] and (c.get("over") or not (last and c["lot_id"] not in has_ok))
     if notes is not None:
         pr = sorted({f"{c['lot_id']}~{spec_key(c['spec'])}" for c in out if c["probe"]})
         if pr:
@@ -365,8 +415,9 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             progressed = True
         if not progressed:
             break
-    plan = [{"lot_id": lid, "rfq_id": rid, "bags": n, "markup": k_rfq[rid] + lot_off.get(lid, 0.0)}
-            for (lid, rid), n in alloc.items()]
+    tv_of = {(c["lot_id"], c["rfq_id"]): c["tv"] for c in pairs}
+    plan = [{"lot_id": lid, "rfq_id": rid, "bags": n, "markup": k_rfq[rid] + lot_off.get(lid, 0.0),
+             "tv": tv_of[(lid, rid)]} for (lid, rid), n in alloc.items()]
     if last and not state["round"]["kind"] == "practice":
         plan = last_round_ladder(plan, rfqs, limited or set(), ctx.notes)
     return plan
@@ -390,6 +441,7 @@ def last_round_ladder(plan: list[dict], rfqs: dict, limited: set, notes: list) -
 def rule_plan(state: dict, ctx: Context, cands: list[dict]) -> list[dict]:
     """ใช้ได้ทั้งตอนปกติและตอน main.py เรียกเป็นทางสำรองเมื่อ decide() พัง"""
     L = learn(state, ctx)
+    ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"]))
     return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"])
 
@@ -452,15 +504,18 @@ def guard(state: dict, ctx: Context, plan: list[dict]) -> list[dict]:
     offers = []
     for p in merged.values():
         lot, rfq = lots.get(p["lot_id"]), rfqs.get(p["rfq_id"])
-        if lot is None or rfq is None or not spec_ok(lot["sample"], rfq["spec"]):
+        ss = (ctx.spec_sample or {}).get(p["lot_id"], lot["sample"]) if lot else None
+        if lot is None or rfq is None or not (spec_ok(ss, rfq["spec"]) or over_spec(ss, rfq["spec"], ctx.rules)):
             ctx.notes.append(f"guard dropped {p}")
             continue
         kg = min(int(p["bags"]) * BAG, lot_left[lot["lot_id"]], rfq_left[rfq["rfq_id"]], room) // BAG * BAG
         if kg < BAG:
             continue
         markup = min(max(float(p["markup"]), MIN_MARKUP), MAX_MARKUP)
+        tv = p.get("tv") or (ctx.tv_price or ctx.tv)[lot["lot_id"]]
         offers.append({"rfq_id": rfq["rfq_id"], "lot_id": lot["lot_id"], "kg": kg,
-                       "price_per_kg": round(markup * ctx.tv[lot["lot_id"]], 2)})
+                       "price_per_kg": round(markup * tv, 2)})
+        ctx.offer_tv[(rfq["rfq_id"], lot["lot_id"])] = tv
         lot_left[lot["lot_id"]] -= kg
         rfq_left[rfq["rfq_id"]] -= kg
         room -= kg
@@ -469,10 +524,14 @@ def guard(state: dict, ctx: Context, plan: list[dict]) -> list[dict]:
 
 # ---------------- รวมทุกขั้น ----------------
 def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
+    L = learn(state, ctx)
+    ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
     cands = candidates(state, ctx)
     if not cands:
         return [], "none"
-    L = learn(state, ctx)
+    moved = {l: (ctx.tv[l], t) for l, t in L["tv_price"].items() if abs(t - ctx.tv[l]) > 0.005}
+    if moved:
+        ctx.notes.append("pricing TV: " + ", ".join(f"{l} {a:.2f}->{b:.2f}" for l, (a, b) in moved.items()))
     pres = pressure(state, ctx, L["fill"])
     used_llm = llm_adjust(state, ctx, L["buyers"], pres)
     for n, b in sorted(L["buyers"].items()):
