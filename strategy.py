@@ -36,6 +36,8 @@ DOWN = 0.01          # แพ้หมด -> ลง
 MAX_DROP = 0.03      # ลงได้มากสุดต่อรอบ
 BELOW_CEIL = 0.02    # ABOVE_LIMIT ทุกซอง -> ต่ำกว่าเพดานที่เจอเท่านี้
 CEIL_MEMORY = 3      # จำเพดานไว้กี่รอบ
+CEIL_GAP = 0.02      # k ต้องต่ำกว่าเพดานล่าสุดอย่างน้อยเท่านี้ (เพดานแต่ละ RFQ สุ่มต่างกันราว ±0.02)
+PROBE_UNDER_CEIL = True  # ซองหยั่งราคา (+PROBE) ต้องไม่เกินเพดานล่าสุด − CEIL_GAP
 MKT_ADJ = 0.01       # price_max ÷ TV ประมาณต่ำกว่าจุดตัดจริง -> บวกชดเชยเท่านี้
 DRIFT_SEEN = 0.3     # รอบที่ไม่ได้ยื่นให้ผู้ซื้อที่เคยยื่น: ขยับเข้าหาราคาตลาดเท่านี้
 DRIFT_NEW = 0.5      # ผู้ซื้อที่ไม่เคยยื่นเลย: ขยับเข้าหาราคาตลาดเท่านี้
@@ -295,8 +297,9 @@ def learn(state: dict, ctx: Context) -> dict:
                 new, why = k_old, "ไม่มีข้อมูลใหม่"
 
             recent = [c for j, c in b["ceil"] if i - j < CEIL_MEMORY]
-            if recent and new > min(recent) - 0.01:
-                new, why = min(recent) - 0.01, why + " · ติดเพดานล่าสุด"
+            b["cap"] = round(min(recent) - CEIL_GAP, 3) if recent else None
+            if recent and new > b["cap"]:
+                new, why = b["cap"], why + " · ติดเพดานล่าสุด"
             b["k"] = round(min(max(new, MIN_MARKUP), MAX_MARKUP), 3)
             b["last"] = f"{rnd['round_id']}: {'/'.join(st_all) or '-'} -> {b['k']:.3f} ({why})"
 
@@ -386,7 +389,8 @@ def price_rfqs(state: dict, ctx: Context, buyers: dict, pres: float) -> tuple[di
             k = base + PRACTICE_LADDER[n % len(PRACTICE_LADDER)]
         else:
             k = base + bonus - cut
-            if allow_probe and n == 1:
+            cap = (buyers.get(r["buyer"]) or {}).get("cap")
+            if allow_probe and n == 1 and not (PROBE_UNDER_CEIL and cap is not None and k + PROBE > cap + 1e-9):
                 k += PROBE
                 probes.add(r["rfq_id"])
         k_rfq[r["rfq_id"]] = round(min(max(k, floor), MAX_MARKUP), 3)

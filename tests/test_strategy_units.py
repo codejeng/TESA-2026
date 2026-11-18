@@ -112,6 +112,38 @@ def test_mismatch_does_not_override_proven_spec():
     assert L["tv_price"]["LOT-T23-1"] < 123.96
 
 
+
+
+def test_ceiling_cap_and_no_probe_above_it():
+    """Game 13:21 (memory-sandbox-3946b135.json): ทรีอินวัน ABOVE_LIMIT at 0.95 (R5), sold at 0.93 (R6), then R7 went
+    0.94 + probe 0.95 and both hit ABOVE_LIMIT again. Now: k <= ceiling − CEIL_GAP and no +PROBE above that."""
+    INST = {"max_defect_pct": 15.0, "max_moisture_pct": 15.0, "min_screen": None}
+    lot = {"lot_id": "L", "kg_total": 1200, "kg_remaining": 600, "kg_available": 600,
+           "sample": {"defect_pct": 10.0, "moisture_pct": 12.0, "screen": 15}}
+    def rnd(rid, k, st):
+        sent = [{"rfq_id": f"{rid}-1", "lot_id": "L", "kg": 60, "price_per_kg": round(k * 100, 2),
+                 "buyer_type": "INSTANT", "spec": INST, "tv_used": 100.0, "markup": k}]
+        res = {"round_id": rid, "kind": "real",
+               "my_offers": [{"rfq_id": f"{rid}-1", "lot_id": "L", "kg": 60, "price_per_kg": k * 100, "status": st,
+                              "filled_kg": 60 if st == "ACCEPTED" else 0}],
+               "market_summary": [{"rfq_id": f"{rid}-1", "buyer": "6 ทรีอิน", "buyer_type": "INSTANT", "wanted_kg": 600,
+                                   "bought_kg": 300, "offers": 9, "price_min": 90.0, "price_max": 96.0, "price_avg": 93.0}]}
+        return sent, res
+    s5, r5 = rnd("R5", 0.95, "ABOVE_LIMIT")
+    s6, r6 = rnd("R6", 0.93, "ACCEPTED")
+    rfqs = [{"rfq_id": f"R7-{j}", "buyer": "6 ทรีอิน", "buyer_type": "INSTANT", "kg": 600, "bags": 10, "spec": INST}
+            for j in (1, 2)]
+    state = {"round": {"round_id": "R7", "kind": "real", "number": 3, "of": 8, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": rfqs, "round_capacity_kg": 360, "capacity_left_kg": 360}
+    ctx = S.Context(RULES, [], {"L": 100.0}, random.Random(1), _Mem([r5, r6], {"R5": s5, "R6": s6}))
+    L = S.learn(state, ctx)
+    b = L["buyers"]["6 ทรีอิน"]
+    k_rfq, probes = S.price_rfqs(state, ctx, L["buyers"], 0.5)
+    print("ceiling:", b["k"], b.get("cap"), k_rfq, probes)
+    assert b["k"] <= 0.93 + 1e-9
+    assert not probes and max(k_rfq.values()) <= 0.93 + 1e-9
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
