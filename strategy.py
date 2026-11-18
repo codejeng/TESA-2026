@@ -52,6 +52,7 @@ PROBE_MAX_PRESSURE = 0.8
 FLOW_PRESSURE = 0.9  # ไหลไปทางรองเมื่อทางดีสุดเต็ม: เฉพาะตอน pressure >= ค่านี้ หรือล็อตนั้นเพิ่งแพ้รอบก่อน
 FLOW_ON_LOSS = True
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
+FILL_PRIOR_KG = 600   # ถ่วง fill ด้วย FILL_DEFAULT เหมือนเคยยื่นไปแล้ว 10 กระสอบ -> ต้นเกมไม่ตื่นตูมจากข้อมูลไม่กี่ซอง
 FILL_DEFAULT = 0.7   # อัตราขายได้ตั้งต้น (ยังไม่มีข้อมูล)
 TIGHT = 1.0          # pressure เกินนี้ = ขายไม่ทัน -> ใช้ FLOOR_LATE
 URGENCY_SLOPE = 0.05 # pressure เกิน 1 ทุก 0.1 -> ลด k 0.005
@@ -303,7 +304,8 @@ def learn(state: dict, ctx: Context) -> dict:
             b["k"] = round(min(max(new, MIN_MARKUP), MAX_MARKUP), 3)
             b["last"] = f"{rnd['round_id']}: {'/'.join(st_all) or '-'} -> {b['k']:.3f} ({why})"
 
-    fill = min(1.0, max(0.3, filled / offered)) if offered >= 3 * BAG else FILL_DEFAULT
+    fill = (min(1.0, max(0.3, (filled + FILL_DEFAULT * FILL_PRIOR_KG) / (offered + FILL_PRIOR_KG)))
+            if offered >= 3 * BAG else FILL_DEFAULT)
 
     # ค่าคุณภาพสำหรับเช็กสเปกและตั้งราคา: ล็อตที่เคยผ่านสเปกจริง ค่าจริงต้องอยู่ในสเปกนั้น -> ตัดตัวอย่างด้วยสเปกที่ผ่าน
     spec_sample, tv_price = {}, {}

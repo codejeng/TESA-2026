@@ -144,6 +144,30 @@ def test_ceiling_cap_and_no_probe_above_it():
     assert not probes and max(k_rfq.values()) <= 0.93 + 1e-9
 
 
+def test_fill_prior():
+    """fill = (filled + FILL_DEFAULT × FILL_PRIOR_KG) / (offered + FILL_PRIOR_KG) once >= 3 bags offered:
+    7 bags offered, 4 sold -> (240 + 420) / (420 + 600) = 0.647 (was 240/420 = 0.571); under 3 bags -> FILL_DEFAULT."""
+    INST = {"max_defect_pct": 15.0, "max_moisture_pct": 15.0, "min_screen": None}
+    lot = {"lot_id": "L", "kg_total": 1200, "kg_remaining": 960, "kg_available": 960,
+           "sample": {"defect_pct": 10.0, "moisture_pct": 12.0, "screen": 15}}
+
+    def game(offered_bags, sold_bags):
+        sent = [{"rfq_id": "R1-1", "lot_id": "L", "kg": offered_bags * 60, "price_per_kg": 93.0,
+                 "buyer_type": "INSTANT", "spec": INST, "tv_used": 100.0, "markup": 0.93}]
+        res = {"round_id": "R1", "kind": "real",
+               "my_offers": [{"rfq_id": "R1-1", "lot_id": "L", "kg": offered_bags * 60, "price_per_kg": 93.0,
+                              "status": "PARTIAL" if sold_bags else "OUTBID", "filled_kg": sold_bags * 60}],
+               "market_summary": [{"rfq_id": "R1-1", "buyer": "i", "buyer_type": "INSTANT", "wanted_kg": 600,
+                                   "bought_kg": 600, "offers": 9, "price_min": 90.0, "price_max": 96.0, "price_avg": 93.0}]}
+        state = {"round": {"round_id": "R2", "kind": "real", "number": 2, "of": 8, "calendar": "ปกติ"},
+                 "lots": [lot], "rfqs": [], "round_capacity_kg": 420, "capacity_left_kg": 420}
+        return S.learn(state, S.Context(RULES, [], {"L": 100.0}, random.Random(1), _Mem([res], {"R1": sent})))["fill"]
+
+    f7, f2 = game(7, 4), game(2, 0)
+    print(f"fill: 4/7 bags -> {f7:.3f} · 0/2 bags -> {f2:.3f}")
+    assert abs(f7 - (240 + S.FILL_DEFAULT * S.FILL_PRIOR_KG) / (420 + S.FILL_PRIOR_KG)) < 1e-9 and abs(f7 - 0.647) < 0.001
+    assert f2 == S.FILL_DEFAULT
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
