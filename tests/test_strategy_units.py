@@ -35,6 +35,26 @@ def test_switch_gap_uses_open_routes():
     assert by_type == {"S": 2, "C": 4}
 
 
+def test_flow_gated_holds_when_not_contested():
+    """Same market, flow=set() (pressure < FLOW_PRESSURE and nothing lost last round) -> hold for Specialty: S 2, C 0.
+    Game 13:00 (memory-sandbox-7aa49679.json) R1: LOT-T23-3 sent 3 bags to Commercial at 0.99 while Specialty later
+    paid 1.07-1.14 every round -> about 1.4% PR lost."""
+    lot = {"lot_id": "P", "kg_total": 480, "kg_remaining": 480, "kg_available": 480,
+           "sample": {"defect_pct": 0.5, "moisture_pct": 11.0, "screen": 18}}
+    rfqs = [{"rfq_id": "S1", "buyer": "s1", "buyer_type": "SPECIALTY", "kg": 60, "bags": 1, "spec": SPECIALTY},
+            {"rfq_id": "S2", "buyer": "s2", "buyer_type": "SPECIALTY", "kg": 60, "bags": 1, "spec": SPECIALTY},
+            {"rfq_id": "C1", "buyer": "c1", "buyer_type": "COMMERCIAL", "kg": 600, "bags": 10, "spec": COMMERCIAL}]
+    state = {"round": {"round_id": "R2", "kind": "real", "number": 2, "of": 8, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": rfqs, "round_capacity_kg": 360, "capacity_left_kg": 360}
+    ctx = S.Context(RULES, [], {"P": 130.0}, random.Random(1))
+    k = {"S1": 1.10, "S2": 1.10, "C1": 0.99}
+    held = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=set())
+    lost = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow={"P"})
+    assert sum(p["bags"] for p in held if p["rfq_id"] == "C1") == 0
+    assert sum(p["bags"] for p in held if p["rfq_id"].startswith("S")) == 2
+    assert sum(p["bags"] for p in lost if p["rfq_id"] == "C1") == 4
+
+
 # ---------------- SPEC_MISMATCH on one identifiable axis -> price at the worse side of that axis ----------------
 LOT1_1203 = {"defect_pct": 1.4, "moisture_pct": 13.2, "screen": 16}
 # game 12:03 (memory-sandbox-9f487f97.json): LOT-T23-1's sample is not logged; rebuilt from the two TVs logged with

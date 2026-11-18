@@ -47,6 +47,8 @@ BOUNDARY_MOIST = 0.50    # ความชื้นห่าง hard_limit ไ�
 
 PROBE = 0.01         # ซองหยั่งราคา: สูงกว่าราคาหลักเท่านี้ · 1 กระสอบ · เฉพาะตอนขายทันแผน
 PROBE_MAX_PRESSURE = 0.8
+FLOW_PRESSURE = 0.9  # ไหลไปทางรองเมื่อทางดีสุดเต็ม: เฉพาะตอน pressure >= ค่านี้ หรือล็อตนั้นเพิ่งแพ้รอบก่อน
+FLOW_ON_LOSS = True
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
 FILL_DEFAULT = 0.7   # อัตราขายได้ตั้งต้น (ยังไม่มีข้อมูล)
 TIGHT = 1.0          # pressure เกินนี้ = ขายไม่ทัน -> ใช้ FLOOR_LATE
@@ -452,7 +454,8 @@ def classify_spec(cands: list[dict], spec_mem: tuple | None, last: bool, notes: 
 
 
 def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes: set,
-               lot_off: dict | None = None, spec_mem: tuple | None = None, limited: set | None = None) -> list[dict]:
+               lot_off: dict | None = None, spec_mem: tuple | None = None, limited: set | None = None,
+               flow: set | bool = True) -> list[dict]:
     lot_off = lot_off or {}
     last = rounds_left(state, ctx) <= 1
     rfqs = {r["rfq_id"]: r for r in state["rfqs"]}
@@ -470,7 +473,8 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
 
     def open_best(lot: str) -> float:
         """k สูงสุดของทางที่ยังมีที่รับรอบนี้ · RFQ ที่จ่ายดีเต็มแล้ว กระสอบที่เหลือไหลไปทางรองได้ (SWITCH_GAP เทียบกับค่านี้)"""
-        return max((k_rfq[r] for r in routes[lot] if rfq_room[r] > 0), default=0.0)
+        free = flow is True or (flow and lot in flow)     # ไม่ไหล: เทียบกับทางดีสุดแม้เต็มแล้ว (รอรอบหน้า)
+        return max((k_rfq[r] for r in routes[lot] if rfq_room[r] > 0 or not free), default=0.0)
     budget = round_budget_bags(state, ctx)
     # ราคาหลักก่อน (ผู้ซื้อจ่ายดีก่อน) ซองหยั่งราคาไปท้ายสุด -> ซองหยั่งไม่แย่งโควตา
     order = sorted(rfqs, key=lambda i: (i in probes, -k_rfq[i], -rfqs[i]["bags"]))
@@ -635,5 +639,20 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")
     ctx.notes.append(f"fill {L['fill']:.2f} · lot offsets {L['lot_off'] or '-'}")
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pres)
-    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"]))
+    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"],
+                                          flow_lots(state, ctx, pres)))
     return offers, "rules+llm" if used_llm else "rules"
+
+
+def flow_lots(state: dict, ctx: Context, pres: float) -> set | bool:
+    """ล็อตที่ยอมให้ไหลไปทางรองรอบนี้: ทุกล็อตถ้า pressure สูง · ไม่งั้นเฉพาะล็อตที่รอบก่อนแพ้ (OUTBID/ABOVE_LIMIT) = ทางดีสุดแย่งกันจริง"""
+    if pres >= FLOW_PRESSURE:
+        return True
+    lost = set()
+    if FLOW_ON_LOSS:
+        for o in (state.get("last_results") or {}).get("my_offers") or []:
+            if o.get("status") in ("OUTBID", "ABOVE_LIMIT"):
+                lost.add(o["lot_id"])
+    if lost:
+        ctx.notes.append(f"flow (lost last round): {sorted(lost)}")
+    return lost
