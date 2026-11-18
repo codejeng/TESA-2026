@@ -117,6 +117,37 @@ def test_A_1021_lot2_after_probe_passes_sells_full_at_tv15():
     assert sum(o["kg"] for o in offers_for(offers, "LOT-T23-2")) >= BAG
 
 
+# ---------------- B: near-boundary lot hit ABOVE_LIMIT -> price at the worse side, don't blame the buyer ----------------
+def test_B_1007_lot2_defect_boundary_7():
+    """10:07 LOT-T23-2: sample defect 6.8 (true 7.01). After its ABOVE_LIMIT at Instant in R5, R6 prices it at
+    TV(defect 7.01) and buyer 5 learns no ceiling from it."""
+    state, ctx, truth = replay("bf469890", 6)
+    L = S.learn(state, ctx)
+    worse = round(true_value(RULES, {**state["lots"][1]["sample"], "defect_pct": 7.01}), 2)
+    true_tv = truth["LOT-T23-2"]["true_value_per_kg"]
+    print(f"B  10:07 R6 LOT-2 tv_price {L['tv_price']['LOT-T23-2']} (est {ctx.tv['LOT-T23-2']}, worse side {worse}, "
+          f"true {true_tv}) · buyer5 {L['buyers']['5 อินสแตนท์ไทย']['last']} ceil {L['buyers']['5 อินสแตนท์ไทย']['ceil']}")
+    assert abs(L["tv_price"]["LOT-T23-2"] - worse) < 0.01
+    assert abs(worse - true_tv) / true_tv < 0.01
+    assert not L["buyers"]["5 อินสแตนท์ไทย"]["ceil"]
+    assert "LOT-T23-2" not in L["lot_off"]
+
+
+def test_B_1021_lot5_defect_boundary_5():
+    """10:21 LOT-T23-5: sample defect 5.0 (true 5.28), ABOVE_LIMIT at 3 สยามคอมเมิร์ซ in R3 -> R4 prices it at
+    TV(defect 5.01). Commercial d<=7 passing does not prove d<=5, so the worse side still applies."""
+    state, ctx, truth = replay("b28910f2", 4)
+    L = S.learn(state, ctx)
+    worse = round(true_value(RULES, {**[l for l in state["lots"] if l["lot_id"] == "LOT-T23-5"][0]["sample"],
+                                    "defect_pct": 5.01}), 2)
+    true_tv = truth["LOT-T23-5"]["true_value_per_kg"]
+    print(f"B  10:21 R4 LOT-5 tv_price {L['tv_price']['LOT-T23-5']} (est {ctx.tv['LOT-T23-5']}, worse side {worse}, "
+          f"true {true_tv}) · buyer3 {L['buyers']['3 สยามคอมเมิร์ซ']['last']} ceil {L['buyers']['3 สยามคอมเมิร์ซ']['ceil']}")
+    assert abs(L["tv_price"]["LOT-T23-5"] - worse) < 0.01
+    assert abs(worse - true_tv) / true_tv < 0.01
+    assert not L["buyers"]["3 สยามคอมเมิร์ซ"]["ceil"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
