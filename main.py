@@ -87,6 +87,11 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
         # the sandbox reuses lot ids every game, so the samples are what tell one game from the next
         lots_key = tuple(sorted((l["lot_id"], json.dumps(l["sample"], sort_keys=True)) for l in state["lots"]))
         if lots_key != game:                        # new game (or sandbox reset): start fresh
+            try:                                    # the rules (rounds, capacity, TV formula) can change between games
+                info = api.calendar()
+                rules = info["rules"]
+            except Exception as e:                  # noqa: BLE001 — keep the last rules we had
+                log("calendar_error", error=str(e))
             game, acted, tv, tried = lots_key, set(), estimate_lots(rules, state["lots"]), set()
             tag = hashlib.sha1(repr(lots_key).encode()).hexdigest()[:8]
             memory = Memory(LOGS / f"memory-{state['market']}-{tag}.json")
