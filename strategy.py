@@ -190,7 +190,7 @@ def learn(state: dict, ctx: Context) -> dict:
         summ = {s["rfq_id"]: s for s in rnd.get("market_summary") or []}
 
         # ผลของซองเรา: base_k = k ที่ส่ง − ส่วนลดเฉพาะล็อต ณ ตอนนั้น (replay จึงได้ค่าเดียวกับตอนส่ง)
-        entries = defaultdict(list)                   # buyer -> [(lot, status, base_k)]
+        entries = defaultdict(list)                   # buyer -> [(lot, status, base_k, lost_bags, won_bags)]
         for o in rnd.get("my_offers") or []:
             s, m = sent.get((o["rfq_id"], o["lot_id"])), summ.get(o["rfq_id"])
             if s:                                     # หยั่งสเปก: OUTBID ก็แปลว่าผ่านสเปกแล้ว (ผู้ซื้อคัดสเปกก่อนเรียงราคา)
@@ -202,7 +202,9 @@ def learn(state: dict, ctx: Context) -> dict:
                     failed.add((o["lot_id"], key))
             if not s or not m or o["status"] in ("SPEC_MISMATCH", "CANCELLED"):
                 continue
-            entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]]))
+            won_b = o.get("filled_kg", 0) // BAG
+            entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]],
+                                        o["kg"] // BAG - won_b, won_b))       # (..., กระสอบที่แพ้, กระสอบที่ชนะ)
             if o["status"] == "ABOVE_LIMIT" and boundary.get(o["lot_id"]):
                 limited_lots.add(o["lot_id"])
             if rnd.get("kind") != "practice":
@@ -211,8 +213,8 @@ def learn(state: dict, ctx: Context) -> dict:
 
         # ส่วนลดเฉพาะล็อต: แพ้ ทั้งที่ล็อตอื่นของเรา k เท่ากันหรือสูงกว่าขายได้ที่ผู้ซื้อรายเดียวกัน
         for res in entries.values():
-            won = [k for _, st, k in res if st in ("ACCEPTED", "PARTIAL")]
-            for lot, st, k in res:
+            won = [k for _, st, k, *_ in res if st in ("ACCEPTED", "PARTIAL")]
+            for lot, st, k, *_ in res:
                 if st in ("OUTBID", "ABOVE_LIMIT") and won and max(won) >= k - 1e-9:
                     lot_off[lot] = max(-LOT_MAX_OFF, lot_off[lot] - LOT_STEP)
                 elif st == "ACCEPTED" and lot_off[lot] < 0:
@@ -222,7 +224,7 @@ def learn(state: dict, ctx: Context) -> dict:
         for m in summ.values():
             rows_by_buyer[m["buyer"]].append(m)
         # ผู้ซื้อที่รอบนี้ซองของเราโดน ABOVE_LIMIT: รอบสุดท้ายให้ซองราคาต่ำไปที่ผู้ซื้อกลุ่มนี้ก่อน
-        last_limited = {b for b, res in entries.items() if any(st == "ABOVE_LIMIT" for _, st, _ in res)}
+        last_limited = {b for b, res in entries.items() if any(st == "ABOVE_LIMIT" for _, st, *_ in res)}
 
         for buyer, rows in rows_by_buyer.items():
             t = rows[0]["buyer_type"]
@@ -232,31 +234,35 @@ def learn(state: dict, ctx: Context) -> dict:
             short = any(r["bought_kg"] < r["wanted_kg"] for r in rows)
             res = entries.get(buyer, [])
             # ล็อตใกล้ขอบ: TV เราอาจผิดหลาย % -> ไม่ใช้สอน k ผู้ซื้อ ถ้าไม่มีล็อตอื่นก็ใช้ได้ แต่ไม่ใช้ ABOVE_LIMIT สอนเพดาน
-            clean = [(st, k) for lot, st, k in res if not boundary.get(lot)] or [
-                (st, k) for _, st, k in res if st != "ABOVE_LIMIT"]
-            st_all = [st for st, _ in clean]
+            clean = [(st, k, lo, wo) for lot, st, k, lo, wo in res if not boundary.get(lot)] or [
+                (st, k, lo, wo) for _, st, k, lo, wo in res if st != "ABOVE_LIMIT"]
+            st_all = [x[0] for x in clean]
             k_old = b["k"]
 
             if clean:
                 b["own"] = True
-                sold_k = [k for st, k in clean if st in ("ACCEPTED", "PARTIAL")]
+                sold_k = [x[1] for x in clean if x[0] in ("ACCEPTED", "PARTIAL")]
                 if "ABOVE_LIMIT" in st_all:
-                    c = min(k for st, k in clean if st == "ABOVE_LIMIT")
+                    c = min(x[1] for x in clean if x[0] == "ABOVE_LIMIT")
                     b["ceil"].append((i, c))
                     new = max(sold_k) if sold_k else c - BELOW_CEIL
                     why = "เกินเพดานบางซอง คงราคาที่ขายได้" if sold_k else f"เกินเพดาน {c:.3f}"
                 elif all(st == "ACCEPTED" for st in st_all):
-                    new = max(k for _, k in clean) + (UP_FAST if short else UP)
+                    new = max(x[1] for x in clean) + (UP_FAST if short else UP)
                     why = "ขายหมด" + (" + ผู้ซื้อยังขาดของ" if short else "")
                 elif all(st == "OUTBID" for st in st_all):
-                    lo = min(k for _, k in clean)
+                    lo = min(x[1] for x in clean)
                     new = lo - DOWN
                     if k_mkt:
                         new = max(lo - MAX_DROP, min(new, k_mkt - 0.005))
                     why = "แพ้หมด" + (f" (ตลาด≈{k_mkt:.3f})" if k_mkt else "")
-                else:
-                    new = max(sold_k) if sold_k else k_old
-                    why = "ผลปนกัน คงราคา"
+                else:                                 # ผลปนกัน: ยึด k ต่ำสุดที่ขายได้ ไม่ใช่สูงสุด
+                    new = min(sold_k) if sold_k else k_old
+                    why = "ผลปนกัน ใช้ k ต่ำสุดที่ขายได้"
+                    lost, won_n = sum(x[2] for x in clean), sum(x[3] for x in clean)
+                    if sold_k and lost > won_n:       # แพ้มากกว่าชนะ: ลงไปใต้ k ต่ำสุดที่แพ้
+                        new = min(new, min(x[1] for x in clean if x[2] > 0)) - 0.005
+                        why += f" · แพ้ {lost} > ชนะ {won_n} กระสอบ"
             elif k_mkt:
                 w = DRIFT_SEEN if b["own"] else DRIFT_NEW
                 new = k_old + w * ((k_mkt - 0.005) - k_old)

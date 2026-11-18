@@ -197,6 +197,18 @@ def test_C_0930_reject_lot_not_counted():
     assert "LOT-T23-6" not in sell and p < p_all
 
 
+# ---------------- D: mixed results -> lowest sold k, lower still if more bags lost than won ----------------
+def test_D_0930_r3_mixed_commercial():
+    """09:30 R3 at 3 สยามคอมเมิร์ซ: OUTBID 3 bags @1.02, ACCEPTED 1 bag @1.03 (a price probe). Old rule kept
+    max(sold)=1.03. min(sold)=1.03 alone is still 1.03, and −0.005 gives 1.025, so the rule also drops below the
+    lowest losing k: min(1.03, 1.02) − 0.005 = 1.015."""
+    state, ctx, _ = replay("b9b79e1a", 4)
+    L = S.learn(state, ctx)
+    b = L["buyers"]["3 สยามคอมเมิร์ซ"]
+    print(f"D  09:30 R4 buyer 3 k={b['k']} · {b['last']}")
+    assert b["k"] <= 1.02
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
