@@ -168,6 +168,31 @@ def test_fill_prior():
     assert abs(f7 - (240 + S.FILL_DEFAULT * S.FILL_PRIOR_KG) / (420 + S.FILL_PRIOR_KG)) < 1e-9 and abs(f7 - 0.647) < 0.001
     assert f2 == S.FILL_DEFAULT
 
+
+
+def test_hold_while_probing_specialty():
+    """Games 13:21 / 13:51: screen == min_screen -> Specialty is only probed (1 bag) and the other bags all went to
+    Commercial at 0.99 in R1, while Specialty paid 1.06-1.10 later. Now R1 sells Commercial only ceil(6/8) = 1 bag."""
+    lot = {"lot_id": "E", "kg_total": 360, "kg_remaining": 360, "kg_available": 360,
+           "sample": {"defect_pct": 1.0, "moisture_pct": 11.0, "screen": 16}}
+    rfqs = [{"rfq_id": "S1", "buyer": "s1", "buyer_type": "SPECIALTY", "kg": 240, "bags": 4, "spec": SPECIALTY},
+            {"rfq_id": "C1", "buyer": "c1", "buyer_type": "COMMERCIAL", "kg": 600, "bags": 10, "spec": COMMERCIAL}]
+    state = {"round": {"round_id": "R1", "kind": "real", "number": 1, "of": 8, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": rfqs, "round_capacity_kg": 360, "capacity_left_kg": 360}
+    ctx = S.Context(RULES, [], {"E": 130.0}, random.Random(1))
+    k = {"S1": 1.06, "C1": 0.99}
+    plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=set())
+    got = {p["rfq_id"]: p["bags"] for p in plan}
+    print("hold:", got, ctx.notes[-2:])
+    assert got.get("S1") == 1 and got.get("C1") == 1
+    S.HOLD_WHILE_PROBING = False
+    try:
+        plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=set())
+        assert {p["rfq_id"]: p["bags"] for p in plan}.get("C1", 0) > 1
+    finally:
+        S.HOLD_WHILE_PROBING = True
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -51,6 +51,7 @@ PROBE = 0.01         # ซองหยั่งราคา: สูงกว่�
 PROBE_MAX_PRESSURE = 0.8
 FLOW_PRESSURE = 0.9  # ไหลไปทางรองเมื่อทางดีสุดเต็ม: เฉพาะตอน pressure >= ค่านี้ หรือล็อตนั้นเพิ่งแพ้รอบก่อน
 FLOW_ON_LOSS = True
+HOLD_WHILE_PROBING = True  # ล็อตที่กำลังหยั่งสเปกผู้ซื้อที่จ่ายดีกว่า: ขายทางรองแค่ส่วนแบ่งต่อรอบ รอผลหยั่งก่อน
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
 FILL_PRIOR_KG = 600   # ถ่วง fill ด้วย FILL_DEFAULT เหมือนเคยยื่นไปแล้ว 10 กระสอบ -> ต้นเกมไม่ตื่นตูมจากข้อมูลไม่กี่ซอง
 FILL_DEFAULT = 0.7   # อัตราขายได้ตั้งต้น (ยังไม่มีข้อมูล)
@@ -473,6 +474,19 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
         if not c["probe"] or c["lot_id"] not in has_ok:
             routes[c["lot_id"]].append(c["rfq_id"])
     probe_used = defaultdict(int)                     # (lot, spec_key) -> กระสอบที่ใช้หยั่งรอบนี้
+    # ล็อตที่หยั่งสเปกไปผู้ซื้อที่จ่ายดีกว่าทางที่พิสูจน์แล้วเกิน SWITCH_GAP (เช่น ขนาดเม็ดเท่าขอบ Specialty):
+    # ทางรอง (ok) ขายได้แค่ ceil(กระสอบ / รอบที่เหลือ) ในรอบนี้ ถ้าหยั่งผ่าน รอบหน้าค่อยขายทางที่ดีกว่า
+    hold = {}
+    if HOLD_WHILE_PROBING and flow is not True and not last:
+        left_r = rounds_left(state, ctx)
+        for lid in has_ok:
+            ok_k = max((k_rfq[c["rfq_id"]] for c in pairs if c["lot_id"] == lid and not c["probe"]), default=0.0)
+            if any(c["lot_id"] == lid and c["probe"] and k_rfq[c["rfq_id"]] >= ok_k + SWITCH_GAP for c in pairs):
+                n = next(l["kg_available"] // BAG for l in state["lots"] if l["lot_id"] == lid)
+                hold[lid] = -(-n // left_r)
+    if hold and ctx.notes is not None:
+        ctx.notes.append(f"hold while probing (max ok bags this round): {hold}")
+    ok_used = defaultdict(int)
 
     stock = {l["lot_id"]: l["kg_available"] // BAG for l in state["lots"]}
     rfq_room = {i: (min(1, r["bags"]) if i in probes else r["bags"]) for i, r in rfqs.items()}
@@ -505,12 +519,15 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
                 continue
             opts = [c for c in pairs if c["rfq_id"] == rid and stock[c["lot_id"]] > 0
                     and (last or k_rfq[rid] >= open_best(c["lot_id"]) - SWITCH_GAP)
-                    and not (c["probe_limit"] and probe_used[(c["lot_id"], spec_key(c["spec"]))] >= SPEC_PROBE_BAGS)]
+                    and not (c["probe_limit"] and probe_used[(c["lot_id"], spec_key(c["spec"]))] >= SPEC_PROBE_BAGS)
+                    and not (not c["probe"] and c["lot_id"] in hold and ok_used[c["lot_id"]] >= hold[c["lot_id"]])]
             if not opts:
                 continue
             c = min(opts, key=lambda c: (open_best(c["lot_id"]) - k_rfq[rid], c["probe"], -c["tv"]))
             if c["probe"]:
                 probe_used[(c["lot_id"], spec_key(c["spec"]))] += 1
+            else:
+                ok_used[c["lot_id"]] += 1
             alloc[(c["lot_id"], rid)] += 1
             stock[c["lot_id"]] -= 1
             rfq_room[rid] -= 1
