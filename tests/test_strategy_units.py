@@ -193,6 +193,62 @@ def test_hold_while_probing_specialty():
         S.HOLD_WHILE_PROBING = True
 
 
+
+CAL3 = [{"rounds": "1-5", "label": "ปกติ", "demand_weight": 1.0, "specialty_share": None},
+        {"rounds": "6-8", "label": "เทศกาลกาแฟ", "demand_weight": 1.0, "specialty_share": 0.4},
+        {"rounds": "9-12", "label": "ปกติ", "demand_weight": 1.0, "specialty_share": None},
+        {"rounds": "13-14", "label": "ใกล้ปิดตลาด", "demand_weight": 0.6, "specialty_share": None},
+        {"rounds": "15", "label": "รอบสุดท้าย", "demand_weight": 0.3, "specialty_share": None}]
+
+
+def _rules15():
+    r = dict(RULES)
+    r["timeline"] = {**RULES["timeline"], "rounds": 15}
+    return r
+
+
+def test_calendar_weights_and_weighted_left():
+    ctx = S.Context(_rules15(), CAL3, {}, random.Random(1))
+    W = S.calendar_weights(ctx)
+    assert W[6] == (1.0, True) and W[13] == (0.6, False) and W[15] == (0.3, False) and W[1] == (1.0, False)
+    st = {"round": {"round_id": "R13", "kind": "real", "number": 13, "of": 15}}
+    assert abs(S.weighted_left(st, ctx) - 1.5) < 1e-9           # 0.6 + 0.6 + 0.3
+    st = {"round": {"round_id": "P1", "kind": "practice", "number": 1, "of": 15}}
+    assert abs(S.weighted_left(st, ctx) - 13.5) < 1e-9
+    assert abs(S.weighted_left(st, ctx, 1.0) - 16.5) < 1e-9     # festival rounds count double
+    bad = S.Context(_rules15(), [{"rounds": "x"}, {"rounds": "3", "demand_weight": "?"}], {}, random.Random(1))
+    assert S.calendar_weights(bad)[3] == (1.0, False)            # garbage -> neutral
+
+
+def test_pressure_uses_calendar():
+    lot = {"lot_id": "A", "kg_total": 600, "kg_remaining": 600, "kg_available": 600,
+           "sample": {"defect_pct": 5.0, "moisture_pct": 11.0, "screen": 15}}
+    st = {"round": {"round_id": "R13", "kind": "real", "number": 13, "of": 15}, "lots": [lot],
+          "round_capacity_kg": 300, "capacity_left_kg": 300}
+    flat = S.Context(_rules15(), [], {}, random.Random(1))
+    cal = S.Context(_rules15(), CAL3, {}, random.Random(1))
+    p_flat, p_cal = S.pressure(st, flat, 0.7), S.pressure(st, cal, 0.7)
+    assert p_cal > p_flat * 1.9                                  # 3 rounds left but only 1.5 rounds of demand
+
+
+def test_festival_reserve_limits_commercial_before_festival():
+    lot = {"lot_id": "P", "kg_total": 540, "kg_remaining": 540, "kg_available": 540,
+           "sample": {"defect_pct": 0.5, "moisture_pct": 11.0, "screen": 18}}
+    rfqs = [{"rfq_id": "S1", "buyer": "s1", "buyer_type": "SPECIALTY", "kg": 60, "bags": 1, "spec": SPECIALTY},
+            {"rfq_id": "C1", "buyer": "c1", "buyer_type": "COMMERCIAL", "kg": 600, "bags": 10, "spec": COMMERCIAL}]
+    state = {"round": {"round_id": "R2", "kind": "real", "number": 2, "of": 15, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": rfqs, "round_capacity_kg": 300, "capacity_left_kg": 300}
+    ctx = S.Context(_rules15(), CAL3, {"P": 130.0}, random.Random(1))
+    k = {"S1": 1.02, "C1": 1.0}
+    plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=True)
+    got = {p["rfq_id"]: p["bags"] for p in plan}
+    # 9 bags · weight now 1 / (14 rounds left with 3 festival rounds x2 = 15.6) -> ceil(0.58) = 1 commercial bag
+    assert got.get("S1") == 1 and got.get("C1") == 1, got
+    state["round"].update(round_id="R6", number=6, calendar="เทศกาลกาแฟ")   # in the festival: no reserve
+    plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=True)
+    assert {p["rfq_id"]: p["bags"] for p in plan}.get("C1", 0) == 4
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

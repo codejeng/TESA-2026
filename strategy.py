@@ -51,6 +51,12 @@ PROBE = 0.01         # ซองหยั่งราคา: สูงกว่�
 PROBE_MAX_PRESSURE = 0.8
 FLOW_PRESSURE = 0.9  # ไหลไปทางรองเมื่อทางดีสุดเต็ม: เฉพาะตอน pressure >= ค่านี้ หรือล็อตนั้นเพิ่งแพ้รอบก่อน
 FLOW_ON_LOSS = True
+# ---- ปฏิทินตลาด (ด่าน 3: ปกติ -> เทศกาล -> ปกติ -> ใกล้ปิด -> รอบสุดท้าย) ----
+CAL_PRESSURE = True      # pressure นับรอบที่เหลือแบบถ่วง demand_weight ของปฏิทิน (ท้ายตลาดความต้องการลด -> ต้องขายก่อน)
+FEST_RESERVE = True      # ล็อตเกรด Specialty: ก่อนเทศกาลขายทางอื่นตามโควตา เก็บส่วนหนึ่งไว้ขายช่วงเทศกาล
+FEST_MAX_PRESSURE = 1.2  # pressure เกินนี้ (ขายไม่ทันแน่) เลิกเก็บของรอเทศกาล
+FEST_EXTRA = 1.0         # รอบเทศกาลนับน้ำหนักเพิ่มเท่านี้ ตอนแบ่งโควตาล็อต Specialty (1.0 = นับเป็น 2 เท่า)
+SHORT_RATIO = 0.8        # "ผู้ซื้อยังขาดของ" (ขึ้นราคาเร็ว) = ซื้อได้ไม่ถึง 80% ของที่ต้องการ
 HOLD_WHILE_PROBING = True  # ล็อตที่กำลังหยั่งสเปกผู้ซื้อที่จ่ายดีกว่า: ขายทางรองแค่ส่วนแบ่งต่อรอบ รอผลหยั่งก่อน
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
 FILL_PRIOR_KG = 600   # ถ่วง fill ด้วย FILL_DEFAULT เหมือนเคยยื่นไปแล้ว 10 กระสอบ -> ต้นเกมไม่ตื่นตูมจากข้อมูลไม่กี่ซอง
@@ -132,6 +138,31 @@ def spec_known(lot_id: str, spec: dict, passed: set, failed: set) -> bool | None
     if any(l == lot_id and pd <= d and pm <= m and ps >= s for l, (pd, pm, ps) in passed):
         return True
     return None
+
+
+def calendar_weights(ctx: Context) -> dict:
+    """รอบจริง -> (demand_weight, เป็นเทศกาลไหม) จาก GET /v1/calendar · ไม่มีข้อมูล = (1.0, False)"""
+    total = ctx.rules["timeline"]["rounds"]
+    out = {n: (1.0, False) for n in range(1, total + 1)}
+    for c in ctx.calendar or []:
+        try:
+            a, _, b = str(c.get("rounds", "")).partition("-")
+            a, b = int(a), int(b or a)
+            w = float(c["demand_weight"]) if c.get("demand_weight") is not None else 1.0
+        except (TypeError, ValueError):
+            continue
+        fest = "เทศกาล" in str(c.get("label", "")) or "festival" in str(c.get("label", "")).lower()
+        for n in range(a, b + 1):
+            if n in out:
+                out[n] = (max(w, 0.0), fest)
+    return out
+
+
+def weighted_left(state: dict, ctx: Context, fest_extra: float = 0.0) -> float:
+    """รอบที่เหลือ (รวมรอบนี้) ถ่วงด้วย demand_weight · รอบเทศกาลคูณ (1 + fest_extra)"""
+    W, rnd = calendar_weights(ctx), state["round"]
+    start = 1 if rnd["kind"] == "practice" else rnd["number"]
+    return sum(w * (1 + fest_extra if f else 1) for n, (w, f) in W.items() if n >= start)
 
 
 def rounds_left(state: dict, ctx: Context) -> int:
@@ -259,7 +290,7 @@ def learn(state: dict, ctx: Context) -> dict:
             b = buyers.setdefault(buyer, {"type": t, "k": START.get(t, 1.0), "ceil": [], "own": False, "last": ""})
             sold = [r for r in rows if r["bought_kg"] > 0 and r.get("price_max")]
             k_mkt = max(MIN_MARKUP, max(r["price_max"] for r in sold) / tv_ref[t] + MKT_ADJ) if sold else None
-            short = any(r["bought_kg"] < r["wanted_kg"] for r in rows)
+            short = any(r["bought_kg"] < SHORT_RATIO * r["wanted_kg"] for r in rows)
             res = entries.get(buyer, [])
             # ล็อตใกล้ขอบ: TV เราอาจผิดหลาย % -> ไม่ใช้สอน k ผู้ซื้อ ถ้าไม่มีล็อตอื่นก็ใช้ได้ แต่ไม่ใช้ ABOVE_LIMIT สอนเพดาน
             clean = [(st, k, lo, wo) for lot, st, k, lo, wo in res if not boundary.get(lot)] or [
@@ -363,7 +394,8 @@ def pressure(state: dict, ctx: Context, fill: float, sellable: set | None = None
         total = sum(l["kg_total"] for l in lots) / BAG or 1
         expected = total * rounds_left(state, ctx) / ctx.rules["timeline"]["rounds"]
         return left_bags / max(expected, 1)
-    return left_bags / max(cap / BAG * rounds_left(state, ctx) * fill, 1)
+    left = weighted_left(state, ctx) if CAL_PRESSURE else rounds_left(state, ctx)
+    return left_bags / max(cap / BAG * left * fill, 1)
 
 
 # ---------------- 3. ตั้งราคาแต่ละ RFQ ----------------
@@ -488,6 +520,26 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
         ctx.notes.append(f"hold while probing (max ok bags this round): {hold}")
     ok_used = defaultdict(int)
 
+    # เก็บล็อตเกรด Specialty ไว้ขายช่วงเทศกาล: ก่อนเทศกาล ทางที่ไม่ใช่ Specialty ขายได้แค่โควตา
+    # ceil(กระสอบ × น้ำหนักรอบนี้ / น้ำหนักรอบที่เหลือ โดยรอบเทศกาลนับ 1+FEST_EXTRA เท่า) · Specialty จ่ายดีตอนนี้ก็ขายได้ไม่จำกัด
+    fest_q, fest_used = {}, defaultdict(int)
+    if (FEST_RESERVE and getattr(ctx, "pressure", 0.0) < FEST_MAX_PRESSURE and not last
+            and state["round"]["kind"] != "practice"):
+        W = calendar_weights(ctx)
+        now = state["round"]["number"]
+        if any(f and n > now for n, (_, f) in W.items()) and not W.get(now, (1, False))[1]:
+            passed = (spec_mem or (set(), set()))[0]
+            spec_types = {i for i, r in rfqs.items() if r["buyer_type"] == "SPECIALTY"}
+            sgrade = {c["lot_id"] for c in pairs if c["rfq_id"] in spec_types and not c["probe"]}
+            sgrade |= {l for l, (d, m, sc) in passed if d <= 3.0 and sc > 0}
+            wl = weighted_left(state, ctx, FEST_EXTRA) or 1.0
+            for lid in sgrade:
+                n = next((l["kg_available"] // BAG for l in state["lots"] if l["lot_id"] == lid), 0)
+                if n:
+                    fest_q[lid] = math.ceil(n * W[now][0] / wl)
+    if fest_q and ctx.notes is not None:
+        ctx.notes.append(f"festival reserve (max non-Specialty bags this round): {fest_q}")
+
     stock = {l["lot_id"]: l["kg_available"] // BAG for l in state["lots"]}
     rfq_room = {i: (min(1, r["bags"]) if i in probes else r["bags"]) for i, r in rfqs.items()}
 
@@ -520,7 +572,9 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             opts = [c for c in pairs if c["rfq_id"] == rid and stock[c["lot_id"]] > 0
                     and (last or k_rfq[rid] >= open_best(c["lot_id"]) - SWITCH_GAP)
                     and not (c["probe_limit"] and probe_used[(c["lot_id"], spec_key(c["spec"]))] >= SPEC_PROBE_BAGS)
-                    and not (not c["probe"] and c["lot_id"] in hold and ok_used[c["lot_id"]] >= hold[c["lot_id"]])]
+                    and not (not c["probe"] and c["lot_id"] in hold and ok_used[c["lot_id"]] >= hold[c["lot_id"]])
+                    and not (c["lot_id"] in fest_q and rfqs[rid]["buyer_type"] != "SPECIALTY"
+                             and fest_used[c["lot_id"]] >= fest_q[c["lot_id"]])]
             if not opts:
                 continue
             c = min(opts, key=lambda c: (open_best(c["lot_id"]) - k_rfq[rid], c["probe"], -c["tv"]))
@@ -528,6 +582,8 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
                 probe_used[(c["lot_id"], spec_key(c["spec"]))] += 1
             else:
                 ok_used[c["lot_id"]] += 1
+            if rfqs[rid]["buyer_type"] != "SPECIALTY":
+                fest_used[c["lot_id"]] += 1
             alloc[(c["lot_id"], rid)] += 1
             stock[c["lot_id"]] -= 1
             rfq_room[rid] -= 1
@@ -657,6 +713,7 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
     if dead:
         ctx.notes.append(f"no way to sell (not counted in pressure): {dead}")
     pres = pressure(state, ctx, L["fill"], sellable)
+    ctx.pressure = pres
     used_llm = llm_adjust(state, ctx, L["buyers"], pres)
     for n, b in sorted(L["buyers"].items()):
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")

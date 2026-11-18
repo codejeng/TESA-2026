@@ -49,6 +49,7 @@ def send_offers(api: Market, offers: list[dict]) -> list[dict]:
             return []
     sent = []
     for o in offers:
+        time.sleep(0.25)                            # ตลาดจำกัด ≤ 5 คำขอ/วินาที: ส่งทีละซองไม่เกิน 4 ซอง/วินาที
         try:
             sent.append(api.offer(o))
         except MarketError as e:
