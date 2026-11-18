@@ -60,6 +60,7 @@ PACE_NO_CAP = 2.0
 
 MARGIN_DEFECT = 0.40     # ผ่านสเปกแต่ห่างขอบไม่ถึงเท่านี้ = "เฉียดขอบ" (ผลวัดตัวอย่างคลาดได้) · screen == min_screen ก็เฉียดขอบ
 MARGIN_MOIST = 0.40
+MISMATCH_PAD = 0.3       # SPEC_MISMATCH ที่ระบุแกนได้: ตั้งราคาด้วยค่าแกนนั้น = max(ตัวอย่าง, ขีด) + เท่านี้ (screen: −1)
 SPEC_PROBE_BAGS = 1      # ล็อตเฉียดขอบที่ยังไม่รู้ว่าผ่านสเปกนั้นจริงไหม: ยื่นได้เท่านี้ต่อรอบต่อสเปก
                          # ผลเป็น ACCEPTED/PARTIAL/OUTBID = ผ่านจริง -> ยื่นเต็ม · SPEC_MISMATCH = ไม่ผ่าน -> ห้ามยื่นสเปกนั้นอีก
 OVER_MOIST = 1.0         # ตัวอย่างเกินสเปกไม่เกินเท่านี้ ค่าจริงอาจผ่าน -> หยั่ง 1 กระสอบ/รอบ ไปยังสเปกที่หลวมที่สุด
@@ -155,6 +156,19 @@ def worse_side(ss: dict, rules: dict, known_d: float, known_m: float) -> dict:
     return {**ss, **min(opts, key=lambda o: o[0])[1]} if opts else ss
 
 
+def mismatch_axis(sample: dict, spec: dict) -> tuple[str, float] | None:
+    """SPEC_MISMATCH: ถ้ามีแกนเดียวที่ตัวอย่างอยู่ใกล้ขอบ (ห่างไม่ถึง MARGIN หรือเกินขอบแล้ว) แกนนั้นคือแกนที่ค่าจริงหลุดสเปก
+    คืน (แกน, ค่าที่ใช้ตั้งราคา) · หลายแกนหรือไม่มีแกนไหนใกล้ = ระบุไม่ได้ -> None"""
+    near = []
+    if spec["max_defect_pct"] - sample["defect_pct"] < MARGIN_DEFECT:
+        near.append(("defect_pct", round(max(sample["defect_pct"], spec["max_defect_pct"]) + MISMATCH_PAD, 2)))
+    if spec["max_moisture_pct"] - sample["moisture_pct"] < MARGIN_MOIST:
+        near.append(("moisture_pct", round(max(sample["moisture_pct"], spec["max_moisture_pct"]) + MISMATCH_PAD, 2)))
+    if spec["min_screen"] is not None and sample["screen"] - spec["min_screen"] < 1:
+        near.append(("screen", min(sample["screen"], spec["min_screen"]) - 1))
+    return near[0] if len(near) == 1 else None
+
+
 def round_order(rnd: dict) -> tuple:
     digits = re.findall(r"\d+", str(rnd.get("round_id", "")))
     return (0 if rnd.get("kind") == "practice" else 1, int(digits[0]) if digits else 0)
@@ -185,6 +199,8 @@ def learn(state: dict, ctx: Context) -> dict:
         type_specs[r["buyer_type"]].add(spec_key(r["spec"]))
     rounds = sorted(mem.rounds, key=round_order) if mem else []
     limited_lots = set()                              # ล็อตใกล้ขอบที่เคยโดน ABOVE_LIMIT -> ตั้งราคาด้วย TV ฝั่งแย่
+    samples = {l["lot_id"]: l["sample"] for l in state["lots"]}
+    mismatch_px = defaultdict(dict)                   # lot -> {แกน: ค่าที่ใช้ตั้งราคา} จาก SPEC_MISMATCH ที่ระบุแกนได้
 
     for i, rnd in enumerate(rounds):
         sent = {(o["rfq_id"], o["lot_id"]): o for o in mem.sent.get(rnd["round_id"], [])}
@@ -201,6 +217,11 @@ def learn(state: dict, ctx: Context) -> dict:
                     passed.add((o["lot_id"], key))
                 elif key and o["status"] == "SPEC_MISMATCH":
                     failed.add((o["lot_id"], key))
+                    ax = mismatch_axis(samples[o["lot_id"]], s["spec"]) if s.get("spec") and o["lot_id"] in samples else None
+                    if ax:
+                        a, v = ax
+                        old = mismatch_px[o["lot_id"]].get(a)
+                        mismatch_px[o["lot_id"]][a] = v if old is None else (min(old, v) if a == "screen" else max(old, v))
             if not s or not m or o["status"] in ("SPEC_MISMATCH", "CANCELLED"):
                 continue
             won_b = o.get("filled_kg", 0) // BAG
@@ -287,10 +308,14 @@ def learn(state: dict, ctx: Context) -> dict:
             if l == lot["lot_id"]:
                 ss = clip_to_spec(ss, {"max_defect_pct": pd, "max_moisture_pct": pm, "min_screen": ps or None})
         spec_sample[lot["lot_id"]] = ss
-        price_s = ss
+        # ค่าที่ใช้ตั้งราคา (ไม่ใช้เช็กสเปก): แกนที่ SPEC_MISMATCH ระบุได้ -> ฝั่งแย่ · แล้วตัดด้วยสเปกที่ผ่านจริง (ค่าที่พิสูจน์แล้วชนะ)
+        price_s = {**lot["sample"], **mismatch_px.get(lot["lot_id"], {})}
+        for l, (pd, pm, ps) in passed:
+            if l == lot["lot_id"]:
+                price_s = clip_to_spec(price_s, {"max_defect_pct": pd, "max_moisture_pct": pm, "min_screen": ps or None})
         if lot["lot_id"] in limited_lots:
             mine = [k for l, k in passed if l == lot["lot_id"]]
-            price_s = worse_side(ss, ctx.rules, min((k[0] for k in mine), default=100.0),
+            price_s = worse_side(price_s, ctx.rules, min((k[0] for k in mine), default=100.0),
                                  min((k[1] for k in mine), default=100.0))
             lot_off.pop(lot["lot_id"], None)          # TV ฝั่งแย่แก้ราคาแล้ว ไม่ลดซ้ำ
         tv_price[lot["lot_id"]] = (round(true_value(ctx.rules, price_s), 2) if price_s != lot["sample"]

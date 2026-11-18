@@ -35,6 +35,63 @@ def test_switch_gap_uses_open_routes():
     assert by_type == {"S": 2, "C": 4}
 
 
+# ---------------- SPEC_MISMATCH on one identifiable axis -> price at the worse side of that axis ----------------
+LOT1_1203 = {"defect_pct": 1.4, "moisture_pct": 13.2, "screen": 16}
+# game 12:03 (memory-sandbox-9f487f97.json): LOT-T23-1's sample is not logged; rebuilt from the two TVs logged with
+# its offers: 123.96 (sample) and 126.74 (R1 probe to Commercial, sample clipped to moisture 12.5).
+# Only d 1.4 / m 13.2 / screen 16 or 17 gives both (screen 16 and 17 have the same factor).
+
+
+class _Mem:
+    def __init__(self, rounds, sent):
+        self.rounds, self.sent = rounds, sent
+
+
+def _state_1203(round_no: int):
+    mem = json.loads((HERE / "data" / "sandbox-20261118" / "memory-sandbox-9f487f97.json").read_text(encoding="utf-8"))
+    prior = [r for r in sorted(mem["rounds"], key=lambda r: int(r["round_id"][1:])) if int(r["round_id"][1:]) < round_no]
+    state = {"round": {"round_id": f"R{round_no}", "kind": "real", "number": round_no, "of": 8, "calendar": "ปกติ"},
+             "lots": [{"lot_id": "LOT-T23-1", "kg_total": 600, "kg_remaining": 480, "kg_available": 480,
+                       "sample": LOT1_1203}],
+             "rfqs": [], "round_capacity_kg": 420, "capacity_left_kg": 420}
+    ctx = S.Context(RULES, [], {"LOT-T23-1": 123.96}, random.Random(1),
+                    _Mem(prior, {r["round_id"]: mem["sent"].get(r["round_id"], []) for r in prior}))
+    return state, ctx
+
+
+def test_mismatch_axis_1203_lot1():
+    """R1: Commercial (m <= 12.5) SPEC_MISMATCH. Only moisture is near/over its limit -> price at moisture
+    max(13.2, 12.5) + 0.3 = 13.5 -> tv_price below 123.96. Spec checks still use the sample."""
+    from appraisal import true_value
+    assert abs(true_value(RULES, LOT1_1203) - 123.96) < 0.01
+    assert abs(true_value(RULES, {**LOT1_1203, "moisture_pct": 12.5}) - 126.74) < 0.01
+    state, ctx = _state_1203(2)
+    L = S.learn(state, ctx)
+    print(f"mismatch R2: tv_price {L['tv_price']['LOT-T23-1']} (sample TV 123.96) · spec_sample {L['spec_sample']['LOT-T23-1']}")
+    assert L["tv_price"]["LOT-T23-1"] < 123.96
+    assert abs(L["tv_price"]["LOT-T23-1"] - true_value(RULES, {**LOT1_1203, "moisture_pct": 13.5})) < 0.01
+    assert L["spec_sample"]["LOT-T23-1"] == LOT1_1203
+
+
+def test_mismatch_axis_rules():
+    spec = {"max_defect_pct": 3.0, "max_moisture_pct": 12.5, "min_screen": 16}
+    assert S.mismatch_axis({"defect_pct": 2.8, "moisture_pct": 11.0, "screen": 17}, spec) == ("defect_pct", 3.3)
+    assert S.mismatch_axis({"defect_pct": 1.0, "moisture_pct": 12.3, "screen": 17}, spec) == ("moisture_pct", 12.8)
+    assert S.mismatch_axis({"defect_pct": 1.0, "moisture_pct": 11.0, "screen": 16}, spec) == ("screen", 15)
+    assert S.mismatch_axis({"defect_pct": 2.8, "moisture_pct": 12.3, "screen": 17}, spec) is None   # two axes
+    assert S.mismatch_axis({"defect_pct": 1.0, "moisture_pct": 11.0, "screen": 18}, spec) is None   # none near
+
+
+def test_mismatch_does_not_override_proven_spec():
+    """A later pass of Instant m <= 14 (R2 ACCEPTED in that game) caps the moisture used for pricing at 14.0."""
+    from appraisal import true_value
+    state, ctx = _state_1203(3)
+    L = S.learn(state, ctx)
+    print(f"mismatch R3 (after Instant m<=14 ACCEPTED): tv_price {L['tv_price']['LOT-T23-1']}")
+    assert L["tv_price"]["LOT-T23-1"] >= true_value(RULES, {**LOT1_1203, "moisture_pct": 14.0}) - 0.01
+    assert L["tv_price"]["LOT-T23-1"] < 123.96
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
