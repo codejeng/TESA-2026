@@ -432,16 +432,20 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
     last = rounds_left(state, ctx) <= 1
     rfqs = {r["rfq_id"]: r for r in state["rfqs"]}
     pairs = classify_spec(cands, spec_mem, last, ctx.notes)
-    # best_k ของล็อตคิดจากทางที่ ok เท่านั้น: ซองหยั่งสเปก 1 กระสอบต้องไม่ทำให้กระสอบที่เหลือไม่มีที่ไป (SWITCH_GAP)
+    # ทางที่นับเป็น "ทางที่ดีสุด" ของล็อต: ทางที่ ok เท่านั้น (ซองหยั่งสเปก 1 กระสอบไม่ใช่ทางขายจริง)
     has_ok = {c["lot_id"] for c in pairs if not c["probe"]}
-    best_k = defaultdict(float)
+    routes = defaultdict(list)                        # lot -> [rfq_id] ที่ใช้คิดทางที่ดีสุด
     for c in pairs:
         if not c["probe"] or c["lot_id"] not in has_ok:
-            best_k[c["lot_id"]] = max(best_k[c["lot_id"]], k_rfq[c["rfq_id"]])
+            routes[c["lot_id"]].append(c["rfq_id"])
     probe_used = defaultdict(int)                     # (lot, spec_key) -> กระสอบที่ใช้หยั่งรอบนี้
 
     stock = {l["lot_id"]: l["kg_available"] // BAG for l in state["lots"]}
     rfq_room = {i: (min(1, r["bags"]) if i in probes else r["bags"]) for i, r in rfqs.items()}
+
+    def open_best(lot: str) -> float:
+        """k สูงสุดของทางที่ยังมีที่รับรอบนี้ · RFQ ที่จ่ายดีเต็มแล้ว กระสอบที่เหลือไหลไปทางรองได้ (SWITCH_GAP เทียบกับค่านี้)"""
+        return max((k_rfq[r] for r in routes[lot] if rfq_room[r] > 0), default=0.0)
     budget = round_budget_bags(state, ctx)
     # ราคาหลักก่อน (ผู้ซื้อจ่ายดีก่อน) ซองหยั่งราคาไปท้ายสุด -> ซองหยั่งไม่แย่งโควตา
     order = sorted(rfqs, key=lambda i: (i in probes, -k_rfq[i], -rfqs[i]["bags"]))
@@ -465,11 +469,11 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             if budget <= 0 or rfq_room[rid] <= 0:
                 continue
             opts = [c for c in pairs if c["rfq_id"] == rid and stock[c["lot_id"]] > 0
-                    and (last or k_rfq[rid] >= best_k[c["lot_id"]] - SWITCH_GAP)
+                    and (last or k_rfq[rid] >= open_best(c["lot_id"]) - SWITCH_GAP)
                     and not (c["probe_limit"] and probe_used[(c["lot_id"], spec_key(c["spec"]))] >= SPEC_PROBE_BAGS)]
             if not opts:
                 continue
-            c = min(opts, key=lambda c: (best_k[c["lot_id"]] - k_rfq[rid], c["probe"], -c["tv"]))
+            c = min(opts, key=lambda c: (open_best(c["lot_id"]) - k_rfq[rid], c["probe"], -c["tv"]))
             if c["probe"]:
                 probe_used[(c["lot_id"], spec_key(c["spec"]))] += 1
             alloc[(c["lot_id"], rid)] += 1
