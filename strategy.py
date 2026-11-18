@@ -139,6 +139,21 @@ def near_boundary(sample: dict, rules: dict) -> bool:
     return abs(m - rules["moisture"]["hard_limit"]) < BOUNDARY_MOIST
 
 
+def worse_side(ss: dict, rules: dict, known_d: float, known_m: float) -> dict:
+    """ล็อตใกล้ขอบที่ราคาโดน ABOVE_LIMIT: สมมติว่าค่าจริงข้ามขอบที่ใกล้ที่สุดไปฝั่งแย่ (defect = ขอบ+0.01 หรือ
+    moisture = hard_limit+0.01) · ขอบที่สเปกที่ผ่านจริงพิสูจน์แล้วว่าไม่ข้าม (known_*) ไม่นับ"""
+    d, m = ss["defect_pct"], ss["moisture_pct"]
+    opts = []
+    for st in rules["defect_steps"][:-1]:
+        b = st["max_defect_pct"]
+        if d <= b and b - d < BOUNDARY_DEFECT and known_d > b:
+            opts.append(((b - d) / BOUNDARY_DEFECT, {"defect_pct": round(b + 0.01, 2)}))
+    hard = rules["moisture"]["hard_limit"]
+    if m <= hard and hard - m < BOUNDARY_MOIST and known_m > hard:
+        opts.append(((hard - m) / BOUNDARY_MOIST, {"moisture_pct": round(hard + 0.01, 2)}))
+    return {**ss, **min(opts, key=lambda o: o[0])[1]} if opts else ss
+
+
 def round_order(rnd: dict) -> tuple:
     digits = re.findall(r"\d+", str(rnd.get("round_id", "")))
     return (0 if rnd.get("kind") == "practice" else 1, int(digits[0]) if digits else 0)
@@ -168,6 +183,7 @@ def learn(state: dict, ctx: Context) -> dict:
     for r in state["rfqs"]:
         type_specs[r["buyer_type"]].add(spec_key(r["spec"]))
     rounds = sorted(mem.rounds, key=round_order) if mem else []
+    limited_lots = set()                              # ล็อตใกล้ขอบที่เคยโดน ABOVE_LIMIT -> ตั้งราคาด้วย TV ฝั่งแย่
 
     for i, rnd in enumerate(rounds):
         sent = {(o["rfq_id"], o["lot_id"]): o for o in mem.sent.get(rnd["round_id"], [])}
@@ -187,6 +203,8 @@ def learn(state: dict, ctx: Context) -> dict:
             if not s or not m or o["status"] in ("SPEC_MISMATCH", "CANCELLED"):
                 continue
             entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]]))
+            if o["status"] == "ABOVE_LIMIT" and boundary.get(o["lot_id"]):
+                limited_lots.add(o["lot_id"])
             if rnd.get("kind") != "practice":
                 offered += o["kg"]
                 filled += o.get("filled_kg", 0)
@@ -213,7 +231,9 @@ def learn(state: dict, ctx: Context) -> dict:
             k_mkt = max(MIN_MARKUP, max(r["price_max"] for r in sold) / tv_ref[t] + MKT_ADJ) if sold else None
             short = any(r["bought_kg"] < r["wanted_kg"] for r in rows)
             res = entries.get(buyer, [])
-            clean = [(st, k) for lot, st, k in res if not boundary.get(lot)] or [(st, k) for _, st, k in res]
+            # ล็อตใกล้ขอบ: TV เราอาจผิดหลาย % -> ไม่ใช้สอน k ผู้ซื้อ ถ้าไม่มีล็อตอื่นก็ใช้ได้ แต่ไม่ใช้ ABOVE_LIMIT สอนเพดาน
+            clean = [(st, k) for lot, st, k in res if not boundary.get(lot)] or [
+                (st, k) for _, st, k in res if st != "ABOVE_LIMIT"]
             st_all = [st for st, _ in clean]
             k_old = b["k"]
 
@@ -260,7 +280,14 @@ def learn(state: dict, ctx: Context) -> dict:
             if l == lot["lot_id"]:
                 ss = clip_to_spec(ss, {"max_defect_pct": pd, "max_moisture_pct": pm, "min_screen": ps or None})
         spec_sample[lot["lot_id"]] = ss
-        tv_price[lot["lot_id"]] = round(true_value(ctx.rules, ss), 2) if ss != lot["sample"] else ctx.tv[lot["lot_id"]]
+        price_s = ss
+        if lot["lot_id"] in limited_lots:
+            mine = [k for l, k in passed if l == lot["lot_id"]]
+            price_s = worse_side(ss, ctx.rules, min((k[0] for k in mine), default=100.0),
+                                 min((k[1] for k in mine), default=100.0))
+            lot_off.pop(lot["lot_id"], None)          # TV ฝั่งแย่แก้ราคาแล้ว ไม่ลดซ้ำ
+        tv_price[lot["lot_id"]] = (round(true_value(ctx.rules, price_s), 2) if price_s != lot["sample"]
+                                   else ctx.tv[lot["lot_id"]])
     return {"buyers": buyers, "lot_off": {k: round(v, 3) for k, v in lot_off.items() if v}, "fill": fill,
             "spec": (passed, failed), "limited_buyers": last_limited if rounds else set(),
             "spec_sample": spec_sample, "tv_price": tv_price}
@@ -394,6 +421,18 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
     # ราคาหลักก่อน (ผู้ซื้อจ่ายดีก่อน) ซองหยั่งราคาไปท้ายสุด -> ซองหยั่งไม่แย่งโควตา
     order = sorted(rfqs, key=lambda i: (i in probes, -k_rfq[i], -rfqs[i]["bags"]))
     alloc = defaultdict(int)
+
+    # ซองหยั่งของล็อตที่เกินสเปกเล็กน้อยได้ที่ก่อน (1 กระสอบ ไป RFQ ที่ k สูงสุดของสเปกนั้น): ถ้าไม่หยั่ง ล็อตนี้ไม่มีทางขายเลย
+    for key in sorted({(c["lot_id"], spec_key(c["spec"])) for c in pairs if c.get("over") and c["probe"]}):
+        opts = [c for c in pairs if (c["lot_id"], spec_key(c["spec"])) == key and rfq_room[c["rfq_id"]] > 0]
+        if budget <= 0 or stock[key[0]] <= 0 or not opts:
+            continue
+        c = max(opts, key=lambda c: k_rfq[c["rfq_id"]])
+        alloc[(c["lot_id"], c["rfq_id"])] += 1
+        probe_used[key] += 1
+        stock[c["lot_id"]] -= 1
+        rfq_room[c["rfq_id"]] -= 1
+        budget -= 1
 
     while budget > 0:
         progressed = False
