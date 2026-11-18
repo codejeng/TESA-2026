@@ -42,8 +42,8 @@ DRIFT_NEW = 0.5      # ผู้ซื้อที่ไม่เคยยื่
 
 LOT_STEP = 0.01      # ล็อตแพ้ทั้งที่ล็อตอื่นราคาเดียวกันชนะ -> ลดราคาล็อตนี้ลง
 LOT_MAX_OFF = 0.04
-BOUNDARY_DEFECT = 0.30   # เมล็ดเสียห่างขอบเกรดไม่ถึงเท่านี้ = TV อาจกระโดด 4% -> ไม่ใช้สอน k ผู้ซื้อ
-BOUNDARY_MOIST = 0.15    # ความชื้นห่าง hard_limit ไม่ถึงเท่านี้
+BOUNDARY_DEFECT = 0.40   # เมล็ดเสียห่างขอบเกรดไม่ถึงเท่านี้ = TV อาจกระโดด 4% -> ไม่ใช้สอน k ผู้ซื้อ (noise ตลาดฝึก ~0.2–0.7)
+BOUNDARY_MOIST = 0.50    # ความชื้นห่าง hard_limit ไม่ถึงเท่านี้ (noise ตลาดฝึกถึง 0.9–1.4)
 
 PROBE = 0.01         # ซองหยั่งราคา: สูงกว่าราคาหลักเท่านี้ · 1 กระสอบ · เฉพาะตอนขายทันแผน
 PROBE_MAX_PRESSURE = 0.8
@@ -58,8 +58,8 @@ LAST_LADDER = (0.0, -0.03, -0.06)   # รอบจริงรอบสุดท
 PRACTICE_LADDER = (-0.03, 0.0, 0.03)    # รอบซ้อม: ยื่นหลายระดับเพื่อหยั่งตลาด (ถ้ารอบซ้อมตัดสต็อกจริง ให้ตั้ง (0, 0, 0))
 PACE_NO_CAP = 2.0
 
-MARGIN_DEFECT = 0.30     # ผ่านสเปกแต่ห่างขอบไม่ถึงเท่านี้ = "เฉียดขอบ" (ผลวัดตัวอย่างคลาดได้)
-MARGIN_MOIST = 0.15
+MARGIN_DEFECT = 0.40     # ผ่านสเปกแต่ห่างขอบไม่ถึงเท่านี้ = "เฉียดขอบ" (ผลวัดตัวอย่างคลาดได้) · screen == min_screen ก็เฉียดขอบ
+MARGIN_MOIST = 0.40
 SPEC_PROBE_BAGS = 1      # ล็อตเฉียดขอบที่ยังไม่รู้ว่าผ่านสเปกนั้นจริงไหม: ยื่นได้เท่านี้ต่อรอบต่อสเปก
                          # ผลเป็น ACCEPTED/PARTIAL/OUTBID = ผ่านจริง -> ยื่นเต็ม · SPEC_MISMATCH = ไม่ผ่าน -> ห้ามยื่นสเปกนั้นอีก
 OVER_MOIST = 1.0         # ตัวอย่างเกินสเปกไม่เกินเท่านี้ ค่าจริงอาจผ่าน -> หยั่ง 1 กระสอบ/รอบ ไปยังสเปกที่หลวมที่สุด
@@ -88,10 +88,11 @@ class Context:
 
 # ---------------- ตัวช่วย ----------------
 def spec_ok(sample: dict, spec: dict, margin: bool = False) -> bool:
-    md, mm = (MARGIN_DEFECT, MARGIN_MOIST) if margin else (0.0, 0.0)
+    """margin=True: ต้องห่างขอบ (defect/moisture เกิน MARGIN_*, screen มากกว่าขั้นต่ำอย่างน้อย 1 เพราะ screen คลาดได้ ±1)"""
+    md, mm, ms = (MARGIN_DEFECT, MARGIN_MOIST, 1) if margin else (0.0, 0.0, 0)
     return (sample["defect_pct"] <= spec["max_defect_pct"] - md
             and sample["moisture_pct"] <= spec["max_moisture_pct"] - mm
-            and (spec["min_screen"] is None or sample["screen"] >= spec["min_screen"]))
+            and (spec["min_screen"] is None or sample["screen"] >= spec["min_screen"] + ms))
 
 
 def clip_to_spec(sample: dict, spec: dict) -> dict:

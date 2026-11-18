@@ -209,6 +209,62 @@ def test_D_0930_r3_mixed_commercial():
     assert b["k"] <= 1.02
 
 
+# ---------------- E: wider margins, screen == min_screen is an edge ----------------
+def test_E_1007_r1_lot3_screen_edge():
+    """10:07 LOT-T23-3: sample screen 17 (true 16) -> 2 SPEC_MISMATCH offers at 2 บางกอกบลูม (screen >= 17) in R1.
+    Now screen == min_screen is an edge: at most 1 probe bag to that spec."""
+    state, ctx, _ = replay("bf469890", 1)
+    offers, _ = S.decide(state, ctx)
+    spec17 = {r["rfq_id"] for r in state["rfqs"] if r["spec"]["min_screen"] == 17}
+    bags17 = sum(o["kg"] for o in offers if o["lot_id"] == "LOT-T23-3" and o["rfq_id"] in spec17) // BAG
+    print(f"E  10:07 R1 LOT-3 bags to screen>=17 RFQs: {bags17} (was 3 bags in 2 offers) · "
+          f"{[n for n in ctx.notes if n.startswith('spec probe')]}")
+    assert bags17 <= 1
+
+
+def test_E_margins():
+    spec = {"max_defect_pct": 7.0, "max_moisture_pct": 12.5, "min_screen": 16}
+    ok = {"defect_pct": 6.5, "moisture_pct": 12.0, "screen": 17}
+    assert S.spec_ok(ok, spec, margin=True)
+    assert not S.spec_ok({**ok, "moisture_pct": 12.2}, spec, margin=True)    # 0.3 from the limit < 0.4
+    assert not S.spec_ok({**ok, "defect_pct": 6.7}, spec, margin=True)
+    assert not S.spec_ok({**ok, "screen": 16}, spec, margin=True) and S.spec_ok({**ok, "screen": 16}, spec)
+    rules = RULES
+    assert S.near_boundary({"defect_pct": 4.65, "moisture_pct": 11.0}, rules)   # 0.35 from 5.0
+    assert S.near_boundary({"defect_pct": 2.0, "moisture_pct": 14.6}, rules)    # 0.4 from 15.0
+    assert not S.near_boundary({"defect_pct": 2.0, "moisture_pct": 14.4}, rules)
+
+
+# ---------------- smoke: every round of every new-config game ----------------
+def test_smoke_all_rounds():
+    """decide() runs on every real round, stays within capacity / stock / RFQ size, every offer is in spec or in
+    probe range, and no price falls below MIN_MARKUP × the TV it was priced with."""
+    n = 0
+    for p in sorted(DATA.glob("memory-sandbox-*.json")):
+        tag = p.stem.rsplit("-", 1)[-1]
+        mem = json.loads(p.read_text(encoding="utf-8"))
+        if not any(json.loads(r.read_text(encoding="utf-8"))["game_tag"] == tag for r in DATA.glob("reveal-*.json")):
+            continue
+        if not all(s["buyer"] in BUYER_SPEC for r in mem["rounds"] for s in r["market_summary"]):
+            continue                                  # old-config game (no Specialty specs known)
+        for r in mem["rounds"]:
+            state, ctx, _ = replay(tag, int(r["round_id"][1:]))
+            offers, _ = S.decide(state, ctx)
+            lots = {l["lot_id"]: l for l in state["lots"]}
+            rfqs = {x["rfq_id"]: x for x in state["rfqs"]}
+            assert sum(o["kg"] for o in offers) <= state["capacity_left_kg"]
+            for o in offers:
+                ss = ctx.spec_sample[o["lot_id"]]
+                assert S.spec_ok(ss, rfqs[o["rfq_id"]]["spec"]) or S.over_spec(ss, rfqs[o["rfq_id"]]["spec"], RULES)
+                assert o["kg"] % BAG == 0 and o["kg"] <= rfqs[o["rfq_id"]]["kg"]
+                assert o["price_per_kg"] >= S.MIN_MARKUP * ctx.offer_tv[(o["rfq_id"], o["lot_id"])] - 0.01
+            for lid in lots:
+                assert sum(o["kg"] for o in offers if o["lot_id"] == lid) <= lots[lid]["kg_available"]
+            n += 1
+    print(f"smoke: {n} rounds ok")
+    assert n >= 40
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
