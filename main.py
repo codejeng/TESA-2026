@@ -104,7 +104,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
             try:
                 api.appraise(appraisal_items(rules, state["lots"], tv))
                 log("appraisal_sent", tv=tv)
-            except MarketError as e:
+            except Exception as e:                  # noqa: BLE001 — timeout too: state says not submitted -> retried next poll
                 log("appraisal_error", error=str(e))
 
         elif phase == "ROUND_OPEN" and not state["paused"] and state["round"]["round_id"] not in acted:
@@ -123,8 +123,20 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
                 offers, source = strategy.decide(state, ctx)
             except Exception as e:                  # noqa: BLE001 — a bug in strategy must not stop the agent
                 log("strategy_crashed", error=repr(e))
-                offers, source = strategy.guard(state, ctx, strategy.rule_plan(state, ctx, strategy.candidates(state, ctx))), "rules"
-            sent = send_offers(api, offers) if offers else []
+                try:
+                    offers, source = strategy.guard(state, ctx, strategy.rule_plan(state, ctx, strategy.candidates(state, ctx))), "rules"
+                except Exception as e2:             # noqa: BLE001 — fallback broke too: skip the round, keep running
+                    log("fallback_crashed", error=repr(e2))
+                    offers, source = [], "none"
+            try:
+                sent = send_offers(api, offers) if offers else []
+            except Exception as e:                  # noqa: BLE001 — timeout / connection lost after retries
+                # try this round again on the next poll: if the batch did reach the market, my_open_offers shows it
+                # and the round_already_sent check above stops a second batch
+                log("send_error", round=rid, error=repr(e))
+                acted.discard(rid)
+                time.sleep(2)
+                continue
             memory.record_sent(rid, offers, state, tv, ctx.offer_tv)
             log("offers_sent", round=rid, source=source, n=len(sent), kg=sum(o["kg"] for o in sent),
                 seconds=round(time.time() - t0, 1), offers=offers, notes=ctx.notes)
