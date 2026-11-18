@@ -294,15 +294,33 @@ def learn(state: dict, ctx: Context) -> dict:
 
 
 # ---------------- 2. ขายทันไหม ----------------
-def pressure(state: dict, ctx: Context, fill: float) -> float:
+def sellable_lots(state: dict, ctx: Context, L: dict) -> set:
+    """ล็อตที่ยังมีทางขาย: ผ่าน (หรืออยู่ในช่วงหยั่งของ) สเปก RFQ ใดๆ ที่เห็นในเกมนี้ และสเปกนั้นยังไม่ถูก SPEC_MISMATCH บล็อก"""
+    specs = {spec_key(r["spec"]): r["spec"] for r in state["rfqs"]}
+    for offers in (ctx.memory.sent.values() if ctx.memory else []):
+        for o in offers:
+            if o.get("spec"):
+                specs.setdefault(spec_key(o["spec"]), o["spec"])
+    passed, failed = L["spec"]
+    out = set()
+    for lot in state["lots"]:
+        ss = L["spec_sample"].get(lot["lot_id"], lot["sample"])
+        if any((spec_ok(ss, sp) or over_spec(ss, sp, ctx.rules))
+               and spec_known(lot["lot_id"], sp, passed, failed) is not False for sp in specs.values()):
+            out.add(lot["lot_id"])
+    return out
+
+
+def pressure(state: dict, ctx: Context, fill: float, sellable: set | None = None) -> float:
     """ของที่เหลือ ÷ ที่น่าจะยังขายได้ (เพดานกระสอบต่อรอบ × รอบที่เหลือ × อัตราขายได้)
-    > 1 = ถ้าขายแบบนี้ต่อจะมีของเหลือไปขายที่ 0.80 แน่ๆ"""
-    left_bags = sum(l["kg_remaining"] for l in state["lots"]) / BAG
+    > 1 = ถ้าขายแบบนี้ต่อจะมีของเหลือไปขายที่ 0.80 แน่ๆ · นับเฉพาะล็อตที่ยังมีทางขาย (sellable) ถ้าให้มา"""
+    lots = [l for l in state["lots"] if sellable is None or l["lot_id"] in sellable]
+    left_bags = sum(l["kg_remaining"] for l in lots) / BAG
     cap = state.get("round_capacity_kg")
     if cap is None:
         cap = state.get("capacity_left_kg")
     if cap is None:            # ไม่มีเพดาน: เทียบกับแผนขายเท่าๆ กันทุกรอบ
-        total = sum(l["kg_total"] for l in state["lots"]) / BAG or 1
+        total = sum(l["kg_total"] for l in lots) / BAG or 1
         expected = total * rounds_left(state, ctx) / ctx.rules["timeline"]["rounds"]
         return left_bags / max(expected, 1)
     return left_bags / max(cap / BAG * rounds_left(state, ctx) * fill, 1)
@@ -481,7 +499,7 @@ def rule_plan(state: dict, ctx: Context, cands: list[dict]) -> list[dict]:
     """ใช้ได้ทั้งตอนปกติและตอน main.py เรียกเป็นทางสำรองเมื่อ decide() พัง"""
     L = learn(state, ctx)
     ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
-    k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"]))
+    k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"], sellable_lots(state, ctx, L)))
     return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"])
 
 
@@ -571,7 +589,11 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
     moved = {l: (ctx.tv[l], t) for l, t in L["tv_price"].items() if abs(t - ctx.tv[l]) > 0.005}
     if moved:
         ctx.notes.append("pricing TV: " + ", ".join(f"{l} {a:.2f}->{b:.2f}" for l, (a, b) in moved.items()))
-    pres = pressure(state, ctx, L["fill"])
+    sellable = sellable_lots(state, ctx, L)
+    dead = sorted(l["lot_id"] for l in state["lots"] if l["lot_id"] not in sellable and l["kg_remaining"] >= BAG)
+    if dead:
+        ctx.notes.append(f"no way to sell (not counted in pressure): {dead}")
+    pres = pressure(state, ctx, L["fill"], sellable)
     used_llm = llm_adjust(state, ctx, L["buyers"], pres)
     for n, b in sorted(L["buyers"].items()):
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")

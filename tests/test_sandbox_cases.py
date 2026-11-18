@@ -148,6 +148,55 @@ def test_B_1021_lot5_defect_boundary_5():
     assert not L["buyers"]["3 สยามคอมเมิร์ซ"]["ceil"]
 
 
+# ---------------- C: pressure counts only lots that can still be sold ----------------
+def _pressure(tag, rn, agent_rules=RULES):
+    state, ctx, _ = replay(tag, rn)              # the market's real state (capacity from the real 8-round rules)
+    ctx.rules = agent_rules                      # the rules the agent believes
+    L = S.learn(state, ctx)
+    ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
+    sell = S.sellable_lots(state, ctx, L)
+    return S.pressure(state, ctx, L["fill"], sell), S.pressure(state, ctx, L["fill"]), sell, state
+
+
+def test_C_0911_r1_pressure():
+    """09:11 R1 logged 1.16 because the agent still had the 6-round rules (main.py now reloads them).
+    With the real 8 rounds: 34 bags / (7 × 8 × 0.7) = 0.87. LOT-T23-5 (moisture 15.7) stays counted: an Instant
+    m<=15 RFQ is open in R1 and 0.7 over is inside the probe range of A (it was really 15.55, so the probe would fail
+    and then C drops it). Excluding it gives 24 / 39.2 = 0.61; the 0.82 in the request = 24 / (7 × 6 × 0.7), i.e. the
+    stale 6 rounds."""
+    p_new, p_all, sell, state = _pressure("1a781f50", 1)
+    rules6 = {**RULES, "timeline": {**RULES["timeline"], "rounds": 6}}
+    p6, _, _, _ = _pressure("1a781f50", 1, rules6)
+    print(f"C  09:11 R1 pressure {p_new:.2f} (8 rounds) · with stale 6-round rules {p6:.2f} · sellable {sorted(sell)}")
+    assert abs(p6 - 1.16) < 0.01 and abs(p_new - 0.87) < 0.01
+    assert "LOT-T23-5" in sell
+
+
+def test_C_0911_r2_lot5_dropped_after_spec_mismatch():
+    """Same lot once its probe is blocked by SPEC_MISMATCH at m<=15 (what the true 15.55 would give): not counted."""
+    state, ctx, _ = replay("1a781f50", 2)
+    r1 = replay("1a781f50", 1)[0]
+    rfq = next(r for r in r1["rfqs"] if r["spec"]["max_moisture_pct"] == 15.0)
+    ctx.memory.sent["R1"] = ctx.memory.sent["R1"] + [{"rfq_id": rfq["rfq_id"], "lot_id": "LOT-T23-5", "kg": 60,
+                                                      "price_per_kg": 100.0, "buyer_type": "INSTANT", "markup": 0.93,
+                                                      "spec": rfq["spec"]}]
+    ctx.memory.rounds[0] = {**ctx.memory.rounds[0], "my_offers": ctx.memory.rounds[0]["my_offers"] + [
+        {"rfq_id": rfq["rfq_id"], "lot_id": "LOT-T23-5", "kg": 60, "status": "SPEC_MISMATCH", "filled_kg": 0}]}
+    L = S.learn(state, ctx)
+    ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
+    sell = S.sellable_lots(state, ctx, L)
+    p, p_all = S.pressure(state, ctx, L["fill"], sell), S.pressure(state, ctx, L["fill"])
+    print(f"C  09:11 R2 after LOT-5 SPEC_MISMATCH: pressure {p:.2f} (all lots {p_all:.2f}) · sellable {sorted(sell)}")
+    assert "LOT-T23-5" not in sell and p < p_all
+
+
+def test_C_0930_reject_lot_not_counted():
+    """09:30 LOT-T23-6: defect 16.9 (REJECT, 1.9 over every spec) never counts."""
+    p, p_all, sell, _ = _pressure("b9b79e1a", 1)
+    print(f"C  09:30 R1 pressure {p:.2f} (all lots {p_all:.2f}) · sellable {sorted(sell)}")
+    assert "LOT-T23-6" not in sell and p < p_all
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
