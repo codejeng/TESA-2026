@@ -45,6 +45,8 @@ def send_offers(api: Market, offers: list[dict]) -> list[dict]:
         return api.offer_batch(offers)["offers"]
     except MarketError as e:
         log("batch_rejected", error=str(e))
+        if e.code in ("ROUND_CLOSED", "WRONG_PHASE"):   # รอบปิดแล้ว ส่งทีละซองก็โดนปฏิเสธหมด -> ไม่ยิงซ้ำ
+            return []
     sent = []
     for o in offers:
         try:
