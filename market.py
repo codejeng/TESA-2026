@@ -1,7 +1,10 @@
 """Small client for the market REST API: auth, retries, 429 back-off, readable errors."""
+import threading
 import time
 
 import httpx
+
+MIN_INTERVAL = 0.22    # seconds between requests: the market allows 5 per second per team (0.22 s -> at most 5 in any 1 s)
 
 
 class MarketError(Exception):
@@ -21,9 +24,20 @@ class Market:
     def __init__(self, base_url: str, key: str, timeout: float = 10.0):
         self.http = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout,
                                  headers={"Authorization": f"Bearer {key}", "User-Agent": "coffee-starter/1.0"})
+        self._lock = threading.Lock()
+        self._last = 0.0                    # time.monotonic() of the previous request
+
+    def _pace(self) -> None:
+        """Wait until MIN_INTERVAL has passed since the previous request (every request, retries included)."""
+        with self._lock:
+            wait = self._last + MIN_INTERVAL - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
 
     def call(self, method: str, path: str, json=None, params=None, tries: int = 4):
         for attempt in range(tries):
+            self._pace()
             try:
                 r = self.http.request(method, path, json=json, params=params)
             except httpx.TransportError:            # server busy or network blip: wait and retry
