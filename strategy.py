@@ -98,7 +98,130 @@ OVER_SCREEN = 1
 
 LLM_MAX_DELTA = 0.02
 LLM_MAX_SECONDS = 20
+BUYER_K_MAX: dict = {}   # overrides.json: ชื่อผู้ซื้อ -> k สูงสุด (ใช้หลังคำนวณ k ทุกครั้ง ใน price_rfqs และ guard)
+LOT_K_OFFSET: dict = {}  # overrides.json: lot_id -> บวกกับส่วนลดเฉพาะล็อตที่ learn คำนวณ (รวมแล้วไม่เกิน ±LOT_K_TOTAL)
+LOT_K_TOTAL = 0.06
 # -------------------------------------------------
+
+
+# ---------------- overrides.json (#44: AI/คนคุมแข่งปรับค่าได้โดยไม่ต้องรีสตาร์ท) ----------------
+# {"set": {"START.SPECIALTY": 1.05, "BUYER_K_MAX": {"1 ดอยช้างโรสเตอร์": 1.08}}, "reason": "...", "author": "fable"}
+# ทั้งไฟล์ต้องถูกหมด ไม่งั้นปฏิเสธทั้งไฟล์และใช้ชุดที่ใช้ได้ล่าสุด · คีย์ที่ไม่อยู่ในไฟล์ = ค่า default ตอนเริ่มโปรแกรม
+OVERRIDE_NUM = {         # คีย์ -> (ต่ำสุด, สูงสุด)
+    "START.SPECIALTY": (0.85, 1.20), "START.COMMERCIAL": (0.85, 1.20), "START.INSTANT": (0.85, 1.20),
+    "FLOOR_EARLY": (0.82, 0.95), "FLOOR_LATE": (0.82, 0.95),       # ห้ามต่ำกว่า 0.80 เด็ดขาด (ขั้นต่ำ 0.82)
+    "URGENCY_SLOPE": (0.0, 0.10), "URGENCY_MAX": (0.0, 0.08), "SHORT_RATIO": (0.5, 1.0),
+}
+OVERRIDE_BOOL = ("SCHEDULE", "FEST_RESERVE", "LOT_SHARE", "CAL_PRESSURE")
+OVERRIDE_MAP = {"BUYER_K_MAX": (0.80, 1.30), "LOT_K_OFFSET": (-0.05, 0.05)}
+OVERRIDE_TOP = {"set", "reason", "author"}
+_DEFAULTS = {**{k: globals()[k] for k in ("FLOOR_EARLY", "FLOOR_LATE", "URGENCY_SLOPE", "URGENCY_MAX", "SHORT_RATIO")},
+             **{k: globals()[k] for k in OVERRIDE_BOOL}, "START": dict(START), "BUYER_K_MAX": {}, "LOT_K_OFFSET": {}}
+_OV = {"hash": None, "set": {}, "reason": "", "author": "", "bad_hash": None, "missing": False}
+
+
+def validate_overrides(data) -> str | None:
+    """None = ใช้ได้ · ไม่งั้นคืนเหตุผลที่ปฏิเสธ"""
+    if not isinstance(data, dict) or not isinstance(data.get("set"), dict):
+        return 'ต้องเป็น {"set": {...}, "reason": "...", "author": "..."}'
+    extra = set(data) - OVERRIDE_TOP
+    if extra:
+        return f"คีย์บนสุดที่ไม่รู้จัก {sorted(extra)}"
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    for k, v in data["set"].items():
+        if k in OVERRIDE_NUM:
+            lo, hi = OVERRIDE_NUM[k]
+            if not num(v) or not lo <= v <= hi:
+                return f"{k}={v!r} นอกช่วง {lo}–{hi}"
+        elif k in OVERRIDE_BOOL:
+            if not isinstance(v, bool):
+                return f"{k}={v!r} ต้องเป็น true/false"
+        elif k in OVERRIDE_MAP:
+            lo, hi = OVERRIDE_MAP[k]
+            if not isinstance(v, dict):
+                return f"{k} ต้องเป็น {{ชื่อ: ค่า}}"
+            for name, x in v.items():
+                if not isinstance(name, str) or not name or not num(x) or not lo <= x <= hi:
+                    return f"{k}[{name!r}]={x!r} นอกช่วง {lo}–{hi}"
+        else:
+            return f"คีย์ที่ไม่อนุญาต {k!r}"
+    return None
+
+
+def _set_values(values: dict) -> None:
+    """กลับ default ทุกคีย์ก่อน แล้วค่อยใส่ค่าจากไฟล์ (คีย์ที่หายจากไฟล์ = default) · START แก้ในที่เดิม"""
+    g = globals()
+    START.clear()
+    START.update(_DEFAULTS["START"])
+    for k, v in _DEFAULTS.items():
+        if k != "START":
+            g[k] = dict(v) if isinstance(v, dict) else v
+    for k, v in values.items():
+        if k.startswith("START."):
+            START[k.split(".", 1)[1]] = float(v)
+        elif k in OVERRIDE_MAP:
+            g[k] = {n: float(x) for n, x in v.items()}
+        else:
+            g[k] = float(v) if k in OVERRIDE_NUM else v
+
+
+def apply_overrides(path) -> tuple[list[tuple[str, dict]], str]:
+    """อ่าน overrides.json ใหม่ทุกครั้ง (main.py เรียกก่อน decide ทุกรอบ)
+    คืน (events สำหรับ log, บรรทัด note) · ไฟล์ไม่มี/เสีย/ผิดช่วง -> ใช้ชุดที่ใช้ได้ล่าสุด (เริ่มต้น = default)"""
+    import hashlib
+    from pathlib import Path
+    p, events = Path(path), []
+    try:
+        raw = p.read_bytes()
+    except FileNotFoundError:
+        raw = None
+    except OSError as e:
+        raw, err = b"", f"อ่านไฟล์ไม่ได้: {e}"
+    if raw is None:
+        if _OV["hash"] is not None and not _OV["missing"]:
+            events.append(("overrides_rejected", {"reason": "ไม่พบไฟล์ ใช้ชุดล่าสุดต่อ", "keep": _OV["set"]}))
+        _OV["missing"] = True
+    else:
+        _OV["missing"] = False
+        h = hashlib.sha1(raw).hexdigest()[:10]
+        if h != _OV["hash"] and h != _OV["bad_hash"]:
+            try:
+                data = json.loads(raw.decode("utf-8"))
+                err = validate_overrides(data)
+            except (ValueError, UnicodeDecodeError) as e:
+                data, err = None, f"JSON เสีย: {e}"
+            if err:
+                _OV["bad_hash"] = h
+                events.append(("overrides_rejected", {"hash": h, "reason": err, "keep": _OV["set"]}))
+            else:
+                _set_values(data["set"])
+                _OV.update(hash=h, set=data["set"], reason=str(data.get("reason", "")),
+                           author=str(data.get("author", "")), bad_hash=None)
+                events.append(("overrides_applied", {"hash": h, "set": data["set"], "reason": _OV["reason"],
+                                                     "author": _OV["author"]}))
+    st = json.dumps(_OV["set"], ensure_ascii=False, sort_keys=True) if _OV["set"] else "default"
+    note = f"overrides: {st}" + (f" · hash {_OV['hash']} · {_OV['author']}: {_OV['reason']}" if _OV["set"] else "")
+    if _OV["bad_hash"]:
+        note += f" · ไฟล์ล่าสุด {_OV['bad_hash']} ถูกปฏิเสธ"
+    if _OV["missing"] and _OV["hash"] is not None:
+        note += " · ไม่พบไฟล์ ใช้ชุดล่าสุด"
+    return events, note
+
+
+def reset_overrides() -> None:
+    """กลับค่า default ทั้งหมดและลืมไฟล์ที่เคยอ่าน (ใช้ในเทส)"""
+    _set_values({})
+    _OV.update(hash=None, set={}, reason="", author="", bad_hash=None, missing=False)
+
+
+def lot_offsets(learned: dict) -> tuple[dict, dict]:
+    """ส่วนลดเฉพาะล็อตที่ใช้จริง = learn + LOT_K_OFFSET จำกัดรวม ±LOT_K_TOTAL · คืน (ใช้จริง, ส่วนที่มาจาก override)"""
+    eff, ov = dict(learned), {}
+    for lot, x in LOT_K_OFFSET.items():
+        base = learned.get(lot, 0.0)
+        tot = round(min(LOT_K_TOTAL, max(-LOT_K_TOTAL, base + x)), 3)
+        eff[lot], ov[lot] = tot, round(tot - base, 3)
+    return eff, ov
 
 
 @dataclass
@@ -114,6 +237,8 @@ class Context:
     tv_price: dict | None = None      # lot -> TV ที่ใช้ตั้งราคา (learn(): ปรับตามสเปกที่รู้ว่าผ่านจริง) · None = ใช้ tv
     spec_sample: dict | None = None   # lot -> ค่าคุณภาพที่ใช้เช็กสเปก (ตัวอย่างที่ตัดด้วยสเปกที่ผ่านจริง)
     offer_tv: dict = field(default_factory=dict)   # (rfq_id, lot_id) -> TV ที่ใช้คิดราคาซองนั้น (main.py เก็บลง memory)
+    lot_ov: dict = field(default_factory=dict)     # lot -> ส่วนลดล็อตที่มาจาก LOT_K_OFFSET รอบนี้ (decide ตั้ง)
+    offer_ov: dict = field(default_factory=dict)   # (rfq_id, lot_id) -> ส่วนนั้นของซอง (memory เก็บเป็น ov_off ให้ learn หักออก)
 
 
 # ---------------- ตัวช่วย ----------------
@@ -350,7 +475,7 @@ def learn(state: dict, ctx: Context) -> dict:
             if not s or not m or o["status"] in ("SPEC_MISMATCH", "CANCELLED"):
                 continue
             won_b = o.get("filled_kg", 0) // BAG
-            entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]],
+            entries[m["buyer"]].append((o["lot_id"], o["status"], s["markup"] - lot_off[o["lot_id"]] - s.get("ov_off", 0.0),
                                         o["kg"] // BAG - won_b, won_b))       # (..., กระสอบที่แพ้, กระสอบที่ชนะ)
             if o["status"] == "ABOVE_LIMIT" and boundary.get(o["lot_id"]):
                 limited_lots.add(o["lot_id"])
@@ -526,7 +651,10 @@ def price_rfqs(state: dict, ctx: Context, buyers: dict, pres: float) -> tuple[di
             if allow_probe and n == 1 and not (PROBE_UNDER_CEIL and cap is not None and k + PROBE > cap + 1e-9):
                 k += PROBE
                 probes.add(r["rfq_id"])
-        k_rfq[r["rfq_id"]] = round(min(max(k, floor), MAX_MARKUP), 3)
+        k = min(max(k, floor), MAX_MARKUP)
+        if r["buyer"] in BUYER_K_MAX:                  # overrides.json: เพดาน k ของผู้ซื้อรายนี้ (guard ตัดซ้ำหลังบวกส่วนลดล็อต)
+            k = min(k, BUYER_K_MAX[r["buyer"]])
+        k_rfq[r["rfq_id"]] = round(k, 3)
     ctx.notes.append(f"pressure {pres:.2f} · urgency -{cut:.3f} · floor {floor} · probe {sorted(probes) or '-'} · k: "
                      + ", ".join(f"{r['rfq_id']}={k_rfq[r['rfq_id']]}" for r in state["rfqs"]))
     return k_rfq, probes
@@ -771,7 +899,8 @@ def rule_plan(state: dict, ctx: Context, cands: list[dict]) -> list[dict]:
     L = learn(state, ctx)
     ctx.tv_price, ctx.spec_sample = L["tv_price"], L["spec_sample"]
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pressure(state, ctx, L["fill"], sellable_lots(state, ctx, L)))
-    return build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"])
+    lot_off, ctx.lot_ov = lot_offsets(L["lot_off"])
+    return build_plan(state, ctx, cands, k_rfq, probes, lot_off, L["spec"], L["limited_buyers"])
 
 
 # ---------------- 5. LLM (ไม่บังคับ) ----------------
@@ -839,11 +968,16 @@ def guard(state: dict, ctx: Context, plan: list[dict]) -> list[dict]:
         kg = min(int(p["bags"]) * BAG, lot_left[lot["lot_id"]], rfq_left[rfq["rfq_id"]], room) // BAG * BAG
         if kg < BAG:
             continue
-        markup = min(max(float(p["markup"]), MIN_MARKUP), MAX_MARKUP)
+        markup = float(p["markup"])
+        if rfq["buyer"] in BUYER_K_MAX:                # overrides.json: ใช้หลังคำนวณ k ทุกทาง (ladder, LLM, ส่วนลดล็อต)
+            markup = min(markup, BUYER_K_MAX[rfq["buyer"]])
+        markup = min(max(markup, MIN_MARKUP), MAX_MARKUP)   # MIN_MARKUP 0.85 > 0.80 เสมอ
         tv = p.get("tv") or (ctx.tv_price or ctx.tv)[lot["lot_id"]]
         offers.append({"rfq_id": rfq["rfq_id"], "lot_id": lot["lot_id"], "kg": kg,
                        "price_per_kg": round(markup * tv, 2)})
         ctx.offer_tv[(rfq["rfq_id"], lot["lot_id"])] = tv
+        if ctx.lot_ov.get(lot["lot_id"]):
+            ctx.offer_ov[(rfq["rfq_id"], lot["lot_id"])] = ctx.lot_ov[lot["lot_id"]]
         lot_left[lot["lot_id"]] -= kg
         rfq_left[rfq["rfq_id"]] -= kg
         room -= kg
@@ -869,9 +1003,11 @@ def decide(state: dict, ctx: Context) -> tuple[list[dict], str]:
     used_llm = llm_adjust(state, ctx, L["buyers"], pres)
     for n, b in sorted(L["buyers"].items()):
         ctx.notes.append(f"{n} [{b['type']}] k={b['k']:.3f} · {b['last']}")
-    ctx.notes.append(f"fill {L['fill']:.2f} · lot offsets {L['lot_off'] or '-'}")
+    lot_off, ctx.lot_ov = lot_offsets(L["lot_off"])
+    ctx.notes.append(f"fill {L['fill']:.2f} · lot offsets {L['lot_off'] or '-'}"
+                     + (f" · + LOT_K_OFFSET {ctx.lot_ov} -> {lot_off}" if ctx.lot_ov else ""))
     k_rfq, probes = price_rfqs(state, ctx, L["buyers"], pres)
-    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, L["lot_off"], L["spec"], L["limited_buyers"],
+    offers = guard(state, ctx, build_plan(state, ctx, cands, k_rfq, probes, lot_off, L["spec"], L["limited_buyers"],
                                           flow_lots(state, ctx, pres)))
     return offers, "rules+llm" if used_llm else "rules"
 

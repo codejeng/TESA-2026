@@ -5,6 +5,7 @@
 
 Send only when staff call your team. You can also upload handin.zip on the page <MARKET_URL>/handin.
 logs/ goes in: the reviewers compare your agent's log with what the market received.
+overrides.json (in-game tuning, #44; git-ignored) and OPS_LOG.md go in too: the reviewers must see every change.
 """
 import os
 import sys
@@ -15,6 +16,7 @@ HERE = Path(__file__).parent
 OUT = HERE / "handin.zip"
 SKIP_DIRS = {".venv", "venv", "__pycache__", ".git", ".ipynb_checkpoints", "node_modules", "site-packages"}
 ENV_OK = {".env.example", ".env.sample", ".env.template"}
+MUST_INCLUDE = ("overrides.json", "OPS_LOG.md")   # #44: ค่าที่ปรับระหว่างแข่ง (+ บันทึกเหตุผล) กรรมการต้องเห็น
 MAX_FILE = 5 * 1024 * 1024     # per file, except under logs/: the reviewers need the whole log
 MAX_ZIP = 20 * 1024 * 1024      # the market's hand-in limit
 
@@ -69,6 +71,11 @@ if __name__ == "__main__":
     print(f"สร้าง {OUT.name} แล้ว: {n} ไฟล์, {size:.1f} MB (ไม่มี .env และ .venv)")
     if not (HERE / "logs" / "decisions.jsonl").exists():
         print("ยังไม่มี logs/decisions.jsonl")
+    with zipfile.ZipFile(OUT) as z:
+        names = set(z.namelist())
+    for f in MUST_INCLUDE:
+        print(f"  {f}: " + ("อยู่ใน zip" if f in names else "ไม่มีไฟล์นี้ (ไม่ได้ปรับค่าระหว่างแข่ง)"
+                                                         if not (HERE / f).exists() else "ไม่อยู่ใน zip!"))
     if OUT.stat().st_size > MAX_ZIP:
         sys.exit(f"{OUT.name} ใหญ่เกิน 20 MB ตลาดไม่รับ: ย้ายไฟล์ข้อมูลใหญ่ๆ ออกจากโฟลเดอร์นี้ (ไม่ใช่ logs/) "
                  "หรือบอกกรรมการให้รับทาง USB")

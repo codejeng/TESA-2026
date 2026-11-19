@@ -20,6 +20,7 @@ from memory import Memory
 
 HERE = Path(__file__).parent
 LOGS = HERE / "logs"
+OVERRIDES = HERE / "overrides.json"   # #44: ปรับค่าระหว่างแข่งได้โดยไม่ต้องรีสตาร์ท (strategy.apply_overrides)
 
 
 def load_env(path: Path) -> None:
@@ -119,6 +120,13 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
                 log("round_already_sent", round=rid, n=len(state["my_open_offers"]))
                 continue
             ctx = strategy.Context(rules, info["calendar"], tv, rng, memory, llm, state["seconds_left"] or 999)
+            try:
+                events, note = strategy.apply_overrides(OVERRIDES)
+                for ev, data in events:
+                    log(ev, round=rid, **data)
+                ctx.notes.append(note)
+            except Exception as e:                  # noqa: BLE001 — overrides must never stop a round
+                log("overrides_rejected", round=rid, reason=f"apply crashed: {e!r}")
             t0 = time.time()
             try:
                 offers, source = strategy.decide(state, ctx)
@@ -138,7 +146,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
                 acted.discard(rid)
                 time.sleep(2)
                 continue
-            memory.record_sent(rid, offers, state, tv, ctx.offer_tv)
+            memory.record_sent(rid, offers, state, tv, ctx.offer_tv, ctx.offer_ov)
             log("offers_sent", round=rid, source=source, n=len(sent), kg=sum(o["kg"] for o in sent),
                 seconds=round(time.time() - t0, 1), offers=offers, notes=ctx.notes)
 

@@ -16,7 +16,8 @@ class Memory:
         self.path.write_text(json.dumps({"sent": self.sent, "rounds": self.rounds}, ensure_ascii=False, indent=1),
                              encoding="utf-8")
 
-    def record_sent(self, round_id: str, offers: list[dict], state: dict, tv: dict, offer_tv: dict | None = None) -> None:
+    def record_sent(self, round_id: str, offers: list[dict], state: dict, tv: dict, offer_tv: dict | None = None,
+                    offer_ov: dict | None = None) -> None:
         """markup = ราคา ÷ TV ที่ใช้คิดราคาซองนั้นจริง (offer_tv จาก strategy) เพื่อให้ learn() เรียน k ในหน่วยเดียวกับที่ตั้ง"""
         types = {r["rfq_id"]: r["buyer_type"] for r in state["rfqs"]}
         specs = {r["rfq_id"]: r["spec"] for r in state["rfqs"]}    # strategy.learn() uses it to learn which specs a lot really passes
@@ -24,8 +25,11 @@ class Memory:
         rows = []
         for o in offers:
             t = offer_tv.get((o["rfq_id"], o["lot_id"]), tv[o["lot_id"]])
-            rows.append({**o, "buyer_type": types[o["rfq_id"]], "spec": specs[o["rfq_id"]], "tv_used": t,
-                         "markup": round(o["price_per_kg"] / t, 3)})
+            row = {**o, "buyer_type": types[o["rfq_id"]], "spec": specs[o["rfq_id"]], "tv_used": t,
+                   "markup": round(o["price_per_kg"] / t, 3)}
+            if (offer_ov or {}).get((o["rfq_id"], o["lot_id"])):      # ส่วนลดล็อตจาก overrides.json: learn() หักออก
+                row["ov_off"] = offer_ov[(o["rfq_id"], o["lot_id"])]
+            rows.append(row)
         self.sent[round_id] = rows
         self.save()
 
