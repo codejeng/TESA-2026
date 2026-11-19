@@ -20,13 +20,19 @@ tools/run_mock.sh nohoard --restart       # kill the agent after it sends R7 (re
 tools/run_mock.sh hoard -- --open-s 7 --clear-s 2 --setup-s 3 --appraisal-s 6    # faster game (~2.5 min)
 ```
 
-- **Web page `/trade`** (e.g. http://127.0.0.1:8200/trade): enter your team key, the mock then accepts that key for
-  our team (memory only, never written), so `main.py` runs with `.env` as is (only `MARKET_URL` must point at the mock).
-  The page shows phase, countdown, lots, RFQs, open offers, last results, per-round history and the final leaderboard;
-  its polling (`/mock/view`) is not counted in the rate limit and does not start the game.
-- Standing sandbox for manual tests: `.venv/bin/python tools/mock_market.py --scenario hoard --port 8200 --wait-start --loop`
-  (`--wait-start`: WAITING until the first request with the key, like pressing start · `--loop`: new game after each close)
-  then run the agent with `MARKET_URL=http://127.0.0.1:8200 TEAM_KEY=sk-T23-mock USE_LLM=0` (`--forever` for several games).
+- **`/trade` = the organizers' trade page** (copied from the sandbox `/trade`, `tools/mock_trade/trade.html` + fonts):
+  log in with the team key, team name and university, exactly like the real one. The mock serves what the page calls:
+  `/v1/version` (`mode`, `trade_page`), `/v1/profile`, `/v1/state`, `/v1/calendar`, `/v1/appraisals`, `/v1/offers`
+  (POST/PUT/DELETE), `/v1/sandbox/advance` ("ข้ามไปช่วงถัดไป"), `/v1/sandbox/reset`, `/v1/sandbox/reveal`.
+  - `--mode sandbox`: the page can send offers and shows the sandbox buttons · `--mode competition` (default): the page is
+    read-only and manual orders get `MANUAL_DISABLED`, like day 3.
+  - `--any-key`: any `sk-...` key plays as T23 (keys are never stored), so `main.py` runs with `.env` as is
+    (only `MARKET_URL` points at the mock).
+  - Page requests (`X-Client: trade-page`) share the team's 5/s budget as on the real market, but are not counted in
+    the agent's request stats and never start a `--wait-start` game.
+  - `/mock/ui`: our own extra dashboard (history per round, leaderboard).
+- Standing stage-3 sandbox: `.venv/bin/python tools/mock_market.py --scenario hoard --port 8200 --mode sandbox --any-key --wait-start --loop`
+  then open http://127.0.0.1:8200/trade and run the agent with `MARKET_URL=http://127.0.0.1:8200`.
 - Default timing ≈ 8 min per game: setup 10 s, appraisal 20 s, 2 practice + 15 real rounds of 20 s open + 5 s clearing
   (real: 600 / 900 / 300 / 60 s). Run several scenarios at once with `--port`.
 - Output in `/tmp/t23-mock-<scenario>[-faults][-restart]/`: `agent.log`, `mock.log`, `mock-result.json`, `check.txt`,

@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coffee Market · หน้าซื้อขาย</title>
+<style>
+:root{--bg:#f5f0e6;--card:#fbf8f2;--line:#ddd3c2;--ink:#2a1e17;--dim:#6f5f52;--accent:#a64b1f;--blue:#2e5e7e;
+--ok:#2e7d4f;--warn:#a64b1f;--bad:#b3261e;--soft:#f3e2d6}
+@font-face{font-family:Sarabun;src:url(/trade/fonts/Sarabun-Regular.ttf);font-weight:400;font-display:swap}
+@font-face{font-family:Sarabun;src:url(/trade/fonts/Sarabun-SemiBold.ttf);font-weight:600;font-display:swap}
+@font-face{font-family:Sarabun;src:url(/trade/fonts/Sarabun-Bold.ttf);font-weight:700;font-display:swap}
+@font-face{font-family:Prompt;src:url(/trade/fonts/Prompt-SemiBold.ttf);font-weight:600;font-display:swap}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Sarabun,"Leelawadee UI",Tahoma,sans-serif;font-size:16px;line-height:1.45}
+h1,h2,.tm,.stat b{font-family:Prompt,Sarabun,sans-serif;font-weight:600}
+.lot{display:flex;gap:10px;align-items:center}
+.left{display:block;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+header{position:sticky;top:0;z-index:5;background:var(--ink);color:#f5f0e6;padding:10px 16px;display:flex;flex-wrap:wrap;
+gap:8px 20px;align-items:center}
+header h1{font-size:18px;margin:0;font-weight:700}
+header .sp{flex:1}
+.ph{font-weight:700;color:#e3a27a}.tm{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.tm.paused{color:#ff9b8f}
+main{max-width:1760px;margin:0 auto;padding:16px;display:grid;grid-template-columns:minmax(0,2.3fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+section h2{font-size:16px;margin:0 0 10px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+section h2 small{font-weight:400;color:var(--dim);font-size:13px}
+.full{grid-column:1/-1}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--dim);font-weight:600}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.wrap{overflow-x:auto}
+input,select,button{font:inherit}
+input[type=number]{width:96px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:#fff}
+select{padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;max-width:100%}
+button{padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.rfq{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px;background:#fff;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+.rfq .top{flex:1 1 230px;min-width:0}
+.rfq .l1{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}.rfq .l2{margin-top:2px}
+.rfq .form{margin-top:0}.rfq .msg{flex-basis:100%;margin:0}
+.rfq input.bg{width:56px}.rfq input.pr{width:88px}.rfq select{width:196px}
+.rfq.sent{background:#eef6f0;border-color:#9cc9ab;box-shadow:inset 5px 0 0 var(--ok)}
+.sentTag{font-weight:700;color:var(--ok);white-space:nowrap}
+.rfq .who{font-weight:700}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--soft);color:var(--accent)}
+.tag.SPECIALTY{background:#efe3f3;color:#6d3a7d}.tag.COMMERCIAL{background:#e2edf5;color:var(--blue)}.tag.INSTANT{background:#f6ead8;color:#8a5a12}
+.form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.muted{color:var(--dim)}.small{font-size:13px}
+.st{font-weight:700}.st.ACCEPTED{color:var(--ok)}.st.PARTIAL{color:var(--blue)}.st.OUTBID,.st.ABOVE_LIMIT,.st.SPEC_MISMATCH{color:var(--bad)}
+.msg{margin:8px 0 0;padding:8px 10px;border-radius:8px;font-size:14px;display:none}
+.msg.err{display:block;background:#fbe9e7;color:var(--bad)}.msg.ok{display:block;background:#e6f2ea;color:var(--ok)}
+.login{max-width:520px;margin:48px auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
+.login input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px}
+.login label{display:block;font-weight:600;font-size:14px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.bean{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+details summary{cursor:pointer;color:var(--blue)}
+pre{background:#2a1e17;color:#f5f0e6;padding:10px;border-radius:8px;overflow:auto;font-size:12px;max-height:340px;white-space:pre-wrap}
+.banner{grid-column:1/-1;background:var(--soft);border-left:6px solid var(--accent);border-radius:8px;padding:10px 14px}
+.hide{display:none!important}
+body.ro #privBtn,body.ro #apBtn,body.ro .rfq .form,body.ro #offers button,body.ro #secSandbox button:first-of-type{display:none}
+</style></head>
+<body>
+<div id="login" class="login">
+<h1 style="margin-top:0">ตลาดเมล็ดกาแฟ · หน้าซื้อขายของทีม</h1>
+<p class="muted">ใส่ key ของทีม (ได้จากทีมงาน) ชื่อทีม และชื่อมหาวิทยาลัย ชื่อนี้จะขึ้นในอันดับและจอเวที</p>
+<label for="key">key ของทีม</label>
+<input id="key" type="password" placeholder="sk-T01-..." autocomplete="off">
+<label for="teamName">ชื่อทีม</label>
+<input id="teamName" maxlength="40" placeholder="เช่น Robusta Bot" autocomplete="off">
+<label for="uni">มหาวิทยาลัย</label>
+<input id="uni" maxlength="80" placeholder="ชื่อมหาวิทยาลัยหรือสถาบัน" autocomplete="off">
+<button onclick="login()">เข้าตลาด</button>
+<div id="loginMsg" class="msg"></div>
+</div>
+
+<div id="app" class="hide">
+<header>
+<h1 id="title">ตลาดเมล็ดกาแฟ</h1><span id="team" class="small"></span>
+<span class="sp"></span>
+<span><span class="ph" id="phase"></span> <span id="round" class="small"></span></span>
+<span class="tm" id="timer">--:--</span>
+<button class="ghost" style="color:#f5f0e6;border-color:#f5f0e6" onclick="logout()">ออก</button>
+</header>
+<main>
+<div id="banner" class="banner hide"></div>
+
+<div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+<section id="secPrivate" class="hide">
+<h2>รอบเก็บคะแนน <small>เล่นได้ครั้งเดียว</small></h2>
+<p id="privInfo" class="small"></p>
+<button id="privBtn" onclick="startPrivate()">เริ่มรอบเก็บคะแนน</button>
+<div id="privMsg" class="msg"></div>
+</section>
+
+<section id="secAppraisal" class="hide">
+<h2>ส่งผลประเมินมูลค่า <small>ส่งได้ครั้งเดียว ก่อนตลาดเปิด</small></h2>
+<p class="small muted">ใส่มูลค่าที่ประเมินของแต่ละล็อต (บาท/กก.) จากผลวัดตัวอย่างและสูตรมูลค่า (ดู "สูตรมูลค่า" ด้านขวา)</p>
+<div class="wrap"><table id="apTable"></table></div>
+<button id="apBtn" onclick="sendAppraisal()">ส่งผลประเมิน</button>
+<div id="apMsg" class="msg"></div>
+</section>
+
+<section id="secRfqs">
+<h2>คำขอซื้อ (RFQ) รอบนี้ <small id="cap"></small></h2>
+<p class="small muted" style="margin:-4px 0 10px">RFQ = Request for Quotation ผู้ซื้อประกาศว่าต้องการกี่กระสอบ และคุณภาพแบบไหน</p>
+<div id="rfqs"></div>
+</section>
+
+<section>
+<h2>ข้อเสนอที่เปิดอยู่ <small>แก้หรือยกเลิกได้จนหมดเวลารอบ</small></h2>
+<div class="wrap"><table id="offers"></table></div>
+<div id="offerMsg" class="msg"></div>
+</section>
+
+<section>
+<h2>ผลรอบล่าสุด <small id="resRound"></small></h2>
+<div class="wrap"><table id="results"></table></div>
+<h2 style="margin-top:14px">ภาพรวมตลาดรอบล่าสุด <small>ไม่ระบุทีม</small></h2>
+<div class="wrap"><table id="summary"></table></div>
+</section>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+<section>
+<h2>ล็อตของฉัน</h2>
+<div class="wrap"><table id="lots"></table></div>
+<p class="small muted" style="margin:8px 0 0">ชื่อล็อต LOT-T05-1 = ทีม T05 ล็อตที่ 1 · พร้อมขาย = กระสอบที่ยังไม่ได้ขาย และไม่ได้ติดอยู่ในข้อเสนอที่เปิดไว้ · ยกเลิกข้อเสนอแล้วกระสอบจะกลับมาพร้อมขาย</p>
+</section>
+
+<section>
+<h2>ผลการขายของทีม</h2>
+<div class="stats" id="stats"></div>
+</section>
+
+<section>
+<h2>สูตรมูลค่า <small>เปิดเผยให้ทุกทีม</small></h2>
+<div id="rules" class="small"></div>
+</section>
+
+<section id="secSandbox" class="hide">
+<h2>Sandbox <small>ตลาดฝึก ไม่มีผลต่อคะแนน</small></h2>
+<button class="ghost" onclick="if(confirm('ข้ามไปช่วงถัดไปทันที? เวลาที่เหลือของช่วงนี้จะถูกตัดทิ้ง'))advanceSandbox()">ข้ามไปช่วงถัดไป</button>
+<button class="ghost" onclick="if(confirm('เริ่มตลาดฝึกใหม่? ข้อมูลรอบนี้จะหาย'))resetSandbox()">เริ่มใหม่</button>
+<button class="ghost" id="revealBtn" onclick="reveal()">ดูมูลค่าจริง (หลังปิดตลาด)</button>
+<div id="revealMsg" class="msg"></div>
+<div id="reveal" class="small"></div>
+</section>
+
+<section>
+<h2>เบื้องหลัง <small>หน้านี้เรียก API อะไร</small></h2>
+<details><summary>ดูคำขอล่าสุด</summary><pre id="log"></pre></details>
+<details><summary>ส่งแบบเดียวกันด้วย Python</summary><pre id="py"></pre></details>
+</section>
+</div>
+</main>
+</div>
+
+<script>
+const PHASE = {WAITING:'รอเริ่ม', SETUP:'เตรียมตัว', APPRAISAL:'ประเมินมูลค่า', ROUND_OPEN:'เปิดรับข้อเสนอ',
+  ROUND_CLEARING:'กำลังจับคู่', CLOSED:'ปิดตลาด'};
+const STATUS = {OPEN:'เปิดอยู่', ACCEPTED:'ขายได้ทั้งหมด', PARTIAL:'ขายได้บางส่วน', OUTBID:'แพ้ข้อเสนอที่คุ้มกว่า',
+  ABOVE_LIMIT:'แพงเกินเพดานผู้ซื้อ', SPEC_MISMATCH:'คุณภาพจริงไม่ผ่านสเปก', CANCELLED:'ยกเลิกแล้ว'};
+const TYPE = {SPECIALTY:'Specialty', COMMERCIAL:'Commercial', INSTANT:'Instant'};
+const ERR = {UNAUTHORIZED:'key ไม่ถูกต้อง', RATE_LIMITED:'ส่งถี่เกินไป รอสักครู่แล้วลองใหม่',
+  WRONG_PHASE:'ทำไม่ได้ในช่วงนี้ของตลาด', ROUND_CLOSED:'รอบนี้ปิดรับข้อเสนอแล้ว', UNKNOWN_LOT:'ไม่มีล็อตนี้',
+  NOT_YOUR_LOT:'ล็อตนี้ไม่ใช่ของทีมคุณ', UNKNOWN_RFQ:'ไม่มีคำขอซื้อนี้ในรอบนี้', UNKNOWN_OFFER:'ไม่มีข้อเสนอนี้',
+  NOT_MULTIPLE_OF_BAG:'ปริมาณต้องเป็นทวีคูณของ 60 กก. (1 กระสอบ)', APPRAISAL_ALREADY_SUBMITTED:'ส่งผลประเมินไปแล้ว ส่งซ้ำไม่ได้',
+  INVALID_FIELD:'ข้อมูลไม่ถูกต้อง', NOT_AVAILABLE:'ยังใช้ไม่ได้ตอนนี้', MANUAL_DISABLED:'ช่วงนี้ห้ามส่งคำสั่งด้วยมือ ต้องใช้ agent'};
+const BAG = 60;
+let KEY = '', PROFILE = null, S = null, RULES = null, MODE = null, PRIV = null, READONLY = false, LOG = [], timerEnd = null, lastSig = '';
+
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (v, d = 2) => v == null ? '–' : Number(v).toLocaleString('th-TH', {maximumFractionDigits: d});
+const bags = kg => kg == null ? '–' : (kg / BAG).toLocaleString('th-TH', {maximumFractionDigits: 1});
+
+async function api(method, path, body, quiet) {
+  const opt = {method, headers: {Authorization: 'Bearer ' + KEY, 'X-Client': 'trade-page'}};
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  let data = null; try { data = await r.json(); } catch (e) {}
+  if (!quiet) {
+    LOG.unshift(`${new Date().toLocaleTimeString('th-TH')}  ${method} ${path}  → ${r.status}` +
+      (body !== undefined ? `\n  ส่ง: ${JSON.stringify(body)}` : '') +
+      `\n  ได้: ${JSON.stringify(data).slice(0, 400)}`);
+    LOG = LOG.slice(0, 15); $('log').textContent = LOG.join('\n\n');
+    $('py').textContent = pySnippet(method, path, body);
+  }
+  if (!r.ok) throw (data && data.error) || {code: 'HTTP_' + r.status, message: 'HTTP ' + r.status};
+  return data;
+}
+
+function pySnippet(method, path, body) {
+  return `import httpx\n\nMARKET = "${location.origin}"\nH = {"Authorization": "Bearer <key ของทีม>"}\n\n` +
+    `r = httpx.${method.toLowerCase()}(MARKET + "${path}", headers=H` + (body !== undefined ? `, json=${JSON.stringify(body)}` : '') +
+    `)\nprint(r.status_code, r.json())`;
+}
+
+function showErr(el, e) {
+  const th = ERR[e.code];
+  el.className = 'msg err';
+  el.innerHTML = `<b>${esc(th || e.code)}</b>` + (e.message ? `<br><span class="small">${esc(e.message)}</span>` : '') +
+    (e.hint ? `<br><span class="small">${esc(e.hint)}</span>` : '');
+}
+function showOk(el, t) { el.className = 'msg ok'; el.textContent = t; setTimeout(() => { el.className = 'msg'; }, 3000); }
+
+async function profile() {
+  // the key is checked here; names typed now replace the ones the server kept
+  PROFILE = await api('GET', '/v1/profile', undefined, true);
+  const team_name = $('teamName').value.trim(), university = $('uni').value.trim();
+  if (team_name || university) {
+    if (!team_name || !university) throw {code: 'INVALID_FIELD', message: 'กรอกทั้งชื่อทีมและชื่อมหาวิทยาลัย'};
+    if (team_name !== PROFILE.team_name || university !== PROFILE.university)
+      PROFILE = await api('POST', '/v1/profile', {team_name, university}, true);
+  } else if (!PROFILE.complete) {
+    throw {code: 'INVALID_FIELD', message: 'กรอกชื่อทีมและชื่อมหาวิทยาลัยก่อนเข้าตลาด'};
+  }
+}
+async function prefill() {
+  // a key the server already knows fills in the names the team typed before
+  const k = $('key').value.trim();
+  if (!k || $('teamName').value || $('uni').value) return;
+  try {
+    const r = await fetch('/v1/profile', {headers: {Authorization: 'Bearer ' + k, 'X-Client': 'trade-page'}});
+    const p = r.ok ? await r.json() : null;
+    if (p && p.complete) { $('teamName').value = p.team_name; $('uni').value = p.university; }
+  } catch (e) {}
+}
+
+async function login() {
+  KEY = $('key').value.trim();
+  try {
+    await profile();
+    const v = await api('GET', '/v1/version', undefined, true); MODE = v.mode; PRIV = v.private || null; READONLY = v.trade_page === false;
+    document.body.classList.toggle('ro', READONLY);
+    await refresh(true);
+    try { sessionStorage.setItem('tradeKey', KEY); } catch (e) {}
+    $('login').classList.add('hide'); $('app').classList.remove('hide');
+    $('secSandbox').classList.toggle('hide', MODE !== 'sandbox');
+    const c = await api('GET', '/v1/calendar', undefined, true); RULES = c.rules; renderRules(c);
+  } catch (e) { showErr($('loginMsg'), e); }
+}
+function logout() { try { sessionStorage.removeItem('tradeKey'); } catch (e) {} location.reload(); }
+
+async function refresh(first) {
+  const s = await api('GET', '/v1/state', undefined, true);
+  S = s; timerEnd = s.seconds_left == null ? null : Date.now() + s.seconds_left * 1000;
+  render(first);
+}
+
+function render(first) {
+  const s = S;
+  $('team').textContent = (PROFILE ? PROFILE.shown_as + ' (' + s.team_id + ')' : s.team_id) + (s.market === 'sandbox' ? ' · sandbox' : '');
+  $('phase').textContent = PHASE[s.phase] || s.phase;
+  const r = s.round;
+  $('round').textContent = r ? (r.kind === 'practice' ? `รอบซ้อม ${r.number}/${r.of}` : `รอบ ${r.number}/${r.of}`) +
+    (r.calendar && r.calendar !== 'ปกติ' ? ` · ${r.calendar}` : '') : '';
+  const b = $('banner');
+  const msg = READONLY ? 'ช่วงนี้หน้าเว็บดูได้อย่างเดียว คำสั่งซื้อขายต้องส่งจาก agent' + (s.paused ? ' · ตลาดหยุดชั่วคราว' : '') :
+    s.paused ? 'ตลาดหยุดชั่วคราว รอทีมงานกดเดินต่อ' :
+    s.phase === 'WAITING' && MODE === 'private' ? 'รอบเก็บคะแนนของทีม: กด "เริ่มรอบเก็บคะแนน" เมื่อทีมพร้อม (เริ่มได้ครั้งเดียว)' :
+    s.phase === 'WAITING' ? 'ตลาดยังไม่เริ่ม รอทีมงานกดเริ่ม' :
+    s.phase === 'CLOSED' ? 'ตลาดปิดแล้ว กระสอบที่ขายไม่ออกขายพ่อค้าคนกลางที่ ' + Math.round(s.salvage_ratio * 100) + '% ของมูลค่าจริง' :
+    r && r.kind === 'practice' && s.phase === 'ROUND_OPEN' ? 'รอบซ้อม: ขายจริงไม่ได้ ผลไม่นับคะแนน' : '';
+  b.textContent = msg; b.classList.toggle('hide', !msg);
+
+  // the page redraws forms only when something changed, so typing is not wiped every poll; the samples are in
+  // the signature because a reset from a script deals new lots under the same lot ids
+  const sig = JSON.stringify([s.phase, r && r.round_id, s.rfqs.map(x => x.rfq_id), s.my_open_offers,
+    s.lots.map(l => [l.kg_available, l.sample]), s.appraisal_submitted, s.last_results && s.last_results.round_id]);
+  if (!first && sig === lastSig) return;
+  lastSig = sig;
+  // keep what the team was typing across redraws
+  const fieldKey = el => (el.dataset.lot || (el.closest('[data-rfq],[data-id]') || {dataset: {}}).dataset.rfq ||
+    el.closest('[data-id]')?.dataset.id) + '|' + el.tagName + el.className;
+  const fields = '#apTable input, #rfqs .form input, #rfqs .form select, #offers input';
+  const typed = {}; document.querySelectorAll(fields).forEach(el => { if (el.value !== '') typed[fieldKey(el)] = el.value; });
+  renderLots(); renderAppraisal(); renderRfqs(); renderOffers(); renderResults(); renderStats(); renderPrivate();
+  document.querySelectorAll(fields).forEach(el => { const v = typed[fieldKey(el)]; if (v !== undefined && !el.disabled) el.value = v; });
+}
+
+function grade(d) {
+  if (!RULES) return '';
+  const st = RULES.defect_steps.find(x => d <= x.max_defect_pct);
+  return st ? st.grade : '';
+}
+
+function renderLots() {
+  // the bean picture is optional decoration: without a file it removes itself and takes no space
+  const rows = S.lots.map(l => {
+    const sold = l.kg_total - l.kg_remaining, held = l.kg_in_open_offers;
+    const parts = [`จาก ${bags(l.kg_total)}`, sold ? `ขายแล้ว ${bags(sold)}` : '', held ? `อยู่ในข้อเสนอ ${bags(held)}` : ''];
+    return `<tr>
+    <td><div class="lot"><img class="bean" src="/trade/beans/${esc(grade(l.sample.defect_pct).toLowerCase() || 'none')}.jpg" alt="" onerror="this.remove()">
+      <div><b>${esc(l.lot_id)}</b><br><span class="small muted">${esc(l.origin)} · ${esc(l.process)}</span></div></div></td>
+    <td class="n">${num(l.sample.moisture_pct)}%</td><td class="n">${num(l.sample.defect_pct)}%</td><td class="n">${esc(l.sample.screen)}</td>
+    <td class="n"><span class="left">${bags(l.kg_available)}</span><span class="small muted">${parts.filter(Boolean).join(' · ')}</span></td></tr>`;
+  }).join('');
+  $('lots').innerHTML = `<tr><th>ล็อต</th><th class="n">ความชื้น</th><th class="n">เมล็ดเสีย</th><th class="n">ขนาด</th>
+    <th class="n">พร้อมขาย<br>(กระสอบ)</th></tr>` + rows;
+}
+
+function renderAppraisal() {
+  const show = ['SETUP', 'APPRAISAL'].includes(S.phase) || (!S.appraisal_submitted && S.phase !== 'WAITING' && S.phase !== 'CLOSED');
+  $('secAppraisal').classList.toggle('hide', !show);
+  if (!show) return;
+  const done = S.appraisal_submitted;
+  $('apTable').innerHTML = `<tr><th>ล็อต</th><th>ผลวัดตัวอย่าง</th><th class="n">มูลค่าที่ประเมิน (บาท/กก.)</th></tr>` +
+    S.lots.map(l => `<tr><td><b>${esc(l.lot_id)}</b></td>
+      <td class="small">ความชื้น ${num(l.sample.moisture_pct)}% · เมล็ดเสีย ${num(l.sample.defect_pct)}% · ขนาด ${esc(l.sample.screen)}</td>
+      <td class="n"><input type="number" step="0.1" min="0" data-lot="${esc(l.lot_id)}" ${done ? 'disabled' : ''}></td></tr>`).join('');
+  $('apBtn').disabled = done || S.phase !== 'APPRAISAL';
+  $('apBtn').textContent = done ? 'ส่งผลประเมินแล้ว' : S.phase === 'APPRAISAL' ? 'ส่งผลประเมิน' : 'ส่งได้เมื่อถึงช่วงประเมินมูลค่า';
+  if (done) loadAppraisal();
+}
+async function loadAppraisal() {
+  try {
+    const a = await api('GET', '/v1/appraisals', undefined, true);
+    document.querySelectorAll('#apTable input').forEach(i => { const it = a.items[i.dataset.lot]; if (it) i.value = it.est_value_per_kg; });
+  } catch (e) {}
+}
+async function sendAppraisal() {
+  const items = [...document.querySelectorAll('#apTable input')].map(i => ({lot_id: i.dataset.lot, est_value_per_kg: Number(i.value)}));
+  if (items.some(i => !(i.est_value_per_kg > 0))) { showErr($('apMsg'), {code: 'INVALID_FIELD', message: 'ใส่มูลค่าให้ครบทุกล็อต'}); return; }
+  if (!confirm('ส่งผลประเมินได้ครั้งเดียว ยืนยัน?')) return;
+  try { await api('POST', '/v1/appraisals', {items}); showOk($('apMsg'), 'ส่งผลประเมินแล้ว'); await refresh(true); }
+  catch (e) { showErr($('apMsg'), e); }
+}
+
+function passes(l, spec) {
+  const s = l.sample;
+  return s.defect_pct <= spec.max_defect_pct && s.moisture_pct <= spec.max_moisture_pct &&
+    (spec.min_screen == null || s.screen >= spec.min_screen);
+}
+function specText(sp) {
+  return `เมล็ดเสีย ≤${num(sp.max_defect_pct)}% · ความชื้น ≤${num(sp.max_moisture_pct, 1)}%` + (sp.min_screen != null ? ` · ขนาด ≥${sp.min_screen}` : '');
+}
+
+function renderRfqs() {
+  $('cap').textContent = S.capacity_left_kg == null ? '' : `รอบนี้ทีมเสนอได้อีกรวม ${bags(S.capacity_left_kg)} กระสอบ`;
+  if (S.phase !== 'ROUND_OPEN') {
+    $('rfqs').innerHTML = `<p class="muted">คำขอซื้อจะขึ้นเมื่อรอบเปิดรับข้อเสนอ</p>`; return;
+  }
+  if (!S.rfqs.length) { $('rfqs').innerHTML = `<p class="muted">รอบนี้ไม่มีคำขอซื้อ</p>`; return; }
+  $('rfqs').innerHTML = S.rfqs.map(q => {
+    // lots whose sample passes the spec come first, so the default choice is a sensible one
+    const usable = S.lots.filter(l => l.kg_available >= BAG);
+    const opts = [...usable.filter(l => passes(l, q.spec)), ...usable.filter(l => !passes(l, q.spec))].map(l => {
+      const ok = passes(l, q.spec);
+      return `<option value="${esc(l.lot_id)}">${esc(l.lot_id)} · ${bags(l.kg_available)} กระสอบ${ok ? '' : ' · ไม่ผ่านสเปก'}</option>`;
+    }).join('');
+    // RFQs the team already has an open offer on stand out, so the rest are easy to spot
+    const mine = S.my_open_offers.filter(o => o.rfq_id === q.rfq_id);
+    const sent = mine.length ? `<span class="sentTag">✓ เสนอแล้ว ${mine.map(o => `${bags(o.kg)} กระสอบ @ ${num(o.price_per_kg)}`).join(', ')}</span>` : '';
+    return `<div class="rfq${mine.length ? ' sent' : ''}"><div class="top"><div class="l1"><span class="who">${esc(q.buyer)}</span><span class="tag ${esc(q.buyer_type)}">${esc(TYPE[q.buyer_type] || q.buyer_type)}</span>
+      <span>ต้องการ <b>${esc(q.bags)}</b> กระสอบ</span></div>
+      <div class="l2 small"><span class="muted">${specText(q.spec)} · <span style="white-space:nowrap">${esc(q.rfq_id)}</span></span> ${sent}</div></div>
+      ${opts ? `<div class="form" data-rfq="${esc(q.rfq_id)}"><select>${opts}</select>
+        <label>กระสอบ <input type="number" min="1" step="1" value="1" class="bg"></label>
+        <label>ราคา <input type="number" min="0" step="0.5" class="pr" placeholder="บาท/กก."></label>
+        <button onclick="sendOffer(this)">ส่งข้อเสนอ</button></div><div class="msg"></div>` :
+        `<p class="small muted">ไม่มีล็อตเหลือให้เสนอ</p>`}</div>`;
+  }).join('');
+}
+
+async function sendOffer(btn) {
+  const f = btn.closest('.form'), m = f.nextElementSibling;
+  const body = {rfq_id: f.dataset.rfq, lot_id: f.querySelector('select').value,
+    kg: Number(f.querySelector('.bg').value) * BAG, price_per_kg: Number(f.querySelector('.pr').value)};
+  if (!(body.price_per_kg > 0)) { showErr(m, {code: 'INVALID_FIELD', message: 'ใส่ราคาต่อกิโลกรัม'}); return; }
+  btn.disabled = true;
+  try { await api('POST', '/v1/offers', body); await refresh(true); showOk($('offerMsg'), 'ส่งข้อเสนอแล้ว'); }
+  catch (e) { showErr(m, e); btn.disabled = false; }
+}
+
+function renderOffers() {
+  const o = S.my_open_offers;
+  if (!o.length) { $('offers').innerHTML = `<tr><td class="muted">ยังไม่มีข้อเสนอในรอบนี้</td></tr>`; return; }
+  $('offers').innerHTML = `<tr><th>คำขอซื้อ (RFQ)</th><th>ล็อต</th><th class="n">กระสอบ</th><th class="n">บาท/กก.</th><th></th></tr>` +
+    o.map(x => `<tr data-id="${esc(x.offer_id)}"><td>${esc(x.rfq_id)}</td><td>${esc(x.lot_id)}</td>
+      <td class="n"><input type="number" min="1" step="1" class="bg" value="${x.kg / BAG}"></td>
+      <td class="n"><input type="number" min="0" step="0.5" class="pr" value="${x.price_per_kg}"></td>
+      <td><button class="ghost" onclick="editOffer(this)">แก้</button> <button class="ghost" onclick="cancelOffer(this)">ยกเลิก</button></td></tr>`).join('');
+}
+async function editOffer(btn) {
+  const tr = btn.closest('tr');
+  const body = {kg: Number(tr.querySelector('.bg').value) * BAG, price_per_kg: Number(tr.querySelector('.pr').value)};
+  try { await api('PUT', '/v1/offers/' + encodeURIComponent(tr.dataset.id), body); showOk($('offerMsg'), 'แก้ข้อเสนอแล้ว'); await refresh(true); }
+  catch (e) { showErr($('offerMsg'), e); }
+}
+async function cancelOffer(btn) {
+  const tr = btn.closest('tr');
+  try { await api('DELETE', '/v1/offers/' + encodeURIComponent(tr.dataset.id)); showOk($('offerMsg'), 'ยกเลิกแล้ว'); await refresh(true); }
+  catch (e) { showErr($('offerMsg'), e); }
+}
+
+function renderResults() {
+  const r = S.last_results;
+  if (!r || !r.round_id) {
+    $('resRound').textContent = ''; $('results').innerHTML = `<tr><td class="muted">ยังไม่มีผล</td></tr>`; $('summary').innerHTML = ''; return;
+  }
+  $('resRound').textContent = r.round_id + (r.kind === 'practice' ? ' (รอบซ้อม)' : '');
+  $('results').innerHTML = r.my_offers.length ? `<tr><th>คำขอซื้อ (RFQ)</th><th>ล็อต</th><th class="n">เสนอ (กระสอบ)</th><th class="n">ขายได้</th><th class="n">บาท/กก.</th><th>ผล</th></tr>` +
+    r.my_offers.map(o => `<tr><td>${esc(o.rfq_id)}</td><td>${esc(o.lot_id)}</td><td class="n">${bags(o.kg)}</td><td class="n">${bags(o.filled_kg)}</td>
+      <td class="n">${num(o.price_per_kg)}</td><td class="st ${esc(o.status)}">${esc(STATUS[o.status] || o.status)}</td></tr>`).join('') :
+    `<tr><td class="muted">รอบนี้ทีมไม่ได้ส่งข้อเสนอ</td></tr>`;
+  $('summary').innerHTML = `<tr><th>ผู้ซื้อ</th><th class="n">ต้องการ</th><th class="n">ซื้อได้</th><th class="n">ข้อเสนอ</th><th class="n">ราคาที่ขายได้ (บาท/กก.)</th></tr>` +
+    r.market_summary.map(x => `<tr><td>${esc(x.buyer)} <span class="tag ${esc(x.buyer_type)}">${esc(TYPE[x.buyer_type] || x.buyer_type)}</span></td>
+      <td class="n">${bags(x.wanted_kg)}</td><td class="n">${bags(x.bought_kg)}</td><td class="n">${esc(x.offers)}</td>
+      <td class="n">${x.price_avg == null ? '–' : `${num(x.price_min)}–${num(x.price_max)} (เฉลี่ย ${num(x.price_avg)})`}</td></tr>`).join('');
+}
+
+function renderStats() {
+  const s = S.standings;
+  $('stats').innerHTML = `<div class="stat">รายได้ (บาท)<b>${num(s.revenue_thb, 0)}</b></div>
+    <div class="stat">ราคาเฉลี่ย (บาท/กก.)<b>${num(s.avg_price_per_kg)}</b></div>
+    <div class="stat">ขายแล้ว (กระสอบ)<b>${bags(s.kg_sold)}</b></div>
+    <div class="stat">ยังไม่ได้ขาย (กระสอบ)<b>${bags(s.kg_remaining)} จาก ${bags(s.kg_total)}</b></div>`;
+}
+
+function renderRules(c) {
+  const r = c.rules;
+  const steps = r.defect_steps.map(x => `<tr><td>≤ ${num(x.max_defect_pct)}%</td><td>${esc(x.grade)}</td><td class="n">${x.step}</td></tr>`).join('');
+  const sf = Object.entries(r.screen_factors).map(([k, v]) => `${k}: ${v}`).join(' · ');
+  $('rules').innerHTML = `<p><b>มูลค่า (บาท/กก.) = ${r.p0} × G × M × S</b></p>
+    <p>G (เมล็ดเสีย d%) = (1 − d/100) × ตัวคูณขั้น</p>
+    <table><tr><th>เมล็ดเสีย</th><th>ชั้น</th><th class="n">ตัวคูณขั้น</th></tr>${steps}</table>
+    <p>M (ความชื้น m%) = 1 ถ้า m ≤ ${r.moisture.ref} · ถ้าไม่เกิน ${r.moisture.hard_limit}: (1 − m/100) ÷ (1 − ${r.moisture.ref}/100) − ${r.moisture.penalty_per_pp} × (m − ${r.moisture.ref}) · เกิน ${r.moisture.hard_limit}: ${r.moisture.hard_factor}</p>
+    <p>S (ขนาดเมล็ด): ${esc(sf)}</p>
+    <p>ขายไม่ออกตอนปิดตลาด ได้ ${Math.round(r.salvage_ratio * 100)}% ของมูลค่าจริง</p>`;
+}
+
+const hhmm = t => new Date(t * 1000).toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+function renderPrivate() {
+  const show = MODE === 'private' && S.phase === 'WAITING';
+  $('secPrivate').classList.toggle('hide', !show);
+  if (!show || !PRIV) return;
+  $('privInfo').textContent = `ใช้เวลาประมาณ ${Math.round(PRIV.duration_s / 60)} นาที นับจากกดเริ่ม` +
+    (PRIV.latest_start_at ? ` · ต้องเริ่มไม่เกิน ${hhmm(PRIV.latest_start_at)} น. (ปิดรอบ ${hhmm(PRIV.close_at)} น.)` : '') +
+    ' · ทุกทีมได้โจทย์ชุดเดียวกัน หยุดหรือเริ่มใหม่ไม่ได้ · ล็อตของทีมจะแสดงเมื่อกดเริ่ม';
+}
+async function startPrivate() {
+  if (!confirm('เริ่มรอบเก็บคะแนน? เริ่มแล้วหยุดหรือเริ่มใหม่ไม่ได้')) return;
+  try { await api('POST', '/v1/private/start'); await refresh(true); }
+  catch (e) { showErr($('privMsg'), e); }
+}
+
+async function resetSandbox() { try { await api('POST', '/v1/sandbox/reset'); $('reveal').innerHTML = ''; await refresh(true); } catch (e) { showErr($('revealMsg'), e); } }
+
+async function advanceSandbox() { try { await api('POST', '/v1/sandbox/advance'); await refresh(true); } catch (e) { showErr($('revealMsg'), e); } }
+async function reveal() {
+  try {
+    const r = await api('GET', '/v1/sandbox/reveal');
+    $('reveal').innerHTML = `<table><tr><th>ล็อต</th><th class="n">มูลค่าจริง</th><th class="n">ที่ประเมิน</th></tr>` +
+      r.lots.map(l => `<tr><td>${esc(l.lot_id)}<br><span class="muted">จริง: ความชื้น ${num(l.true.moisture_pct)}% · เมล็ดเสีย ${num(l.true.defect_pct)}% · ขนาด ${esc(l.true.screen)}</span></td>
+        <td class="n">${num(l.true_value_per_kg)}</td><td class="n">${l.your_estimate ? num(l.your_estimate.est_value_per_kg) : '–'}</td></tr>`).join('') + `</table>` +
+      (r.score ? `<p>อันดับ ${esc(r.score.rank)} · PR ${num(r.score.pr, 3)} · คะแนน ${num(r.score.total, 1)}</p>` : '');
+  } catch (e) { $('reveal').innerHTML = `<p class="muted">${esc(ERR[e.code] || e.message)}</p>`; }
+}
+
+function tick() {
+  const t = $('timer');
+  if (!S) return;
+  t.classList.toggle('paused', !!S.paused);
+  if (S.paused) { t.textContent = 'หยุด'; return; }
+  if (timerEnd == null) { t.textContent = '--:--'; return; }
+  const s = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
+  t.textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+setInterval(tick, 250);
+setInterval(() => { if (KEY && S) refresh(false).catch(() => {}); }, 2000);
+for (const id of ['key', 'teamName', 'uni']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+$('key').addEventListener('change', prefill);
+try { const k = sessionStorage.getItem('tradeKey'); if (k) { $('key').value = k; login(); } } catch (e) {}
+</script></body></html>

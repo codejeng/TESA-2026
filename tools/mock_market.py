@@ -26,7 +26,8 @@ from appraisal import grade, true_value  # noqa: E402
 
 BAG = 60
 OUR = "T23"
-TRADE_HTML = Path(__file__).resolve().parent / "mock_trade.html"
+TRADE_HTML = Path(__file__).resolve().parent / "mock_trade.html"     # our dashboard at /mock/ui
+TRADE_DIR = Path(__file__).resolve().parent / "mock_trade"            # the organizers' /trade page + fonts
 RULES = json.loads((HERE / "data" / "sandbox-20261118" / "calendar-1021.json").read_text(encoding="utf-8"))["rules"]
 
 # stage-3 calendar from the day-3 slides
@@ -102,6 +103,7 @@ class Team:
     def __init__(self, tid: str, kind: str, lots: list, rng: random.Random):
         self.id, self.kind, self.rng = tid, kind, rng
         self.name = tid
+        self.team_name, self.university = (tid, "mock") if tid != OUR else (None, None)
         self.lots = lots                 # [{lot_id, kg_total, kg_remaining, origin, process, sample, true, tv}]
         self.revenue = 0.0
         self.kg_sold = 0
@@ -160,6 +162,7 @@ class Market:
         # our stats
         self.req_times = deque()
         self.max_rps, self.requests, self.n429, self.faults = 0, 0, 0, defaultdict(int)
+        self.page_requests = 0
         self.bucket, self.bucket_t = 10.0, time.time()
         self.fault500_at = self.rng.randint(40, 300)
         self.history = []                # our per-round snapshot
@@ -480,7 +483,7 @@ class Market:
 
     def stats(self):
         out = {"phase": self.phase, "round": self.round[0] if self.round else None, "scenario": self.a.scenario,
-               "faults": self.a.faults, "seed": self.a.seed, "requests": self.requests, "max_rps": self.max_rps,
+               "faults": self.a.faults, "seed": self.a.seed, "requests": self.requests, "page_requests": self.page_requests, "max_rps": self.max_rps,
                "rate_limited_429": self.n429, "faults_injected": dict(self.faults), "appraisal_phase": self.appraisal_phase,
                "batches_per_round": dict(self.batches), "capacity_bags": self.cap_bags, "total_bags": self.total_bags,
                "sellable_bags": sum(l["kg_total"] for l in self.teams[OUR].lots
@@ -517,7 +520,7 @@ class Market:
         open_ = self.phase in ("ROUND_OPEN", "ROUND_CLEARING")
         kg_left = sum(l["kg_remaining"] for l in t.lots)
         return {
-            "market": "competition", "team_id": t.id, "phase": self.phase, "paused": False,
+            "market": self.a.mode, "team_id": t.id, "phase": self.phase, "paused": False,
             "seconds_left": round(max(0.0, self.ends_at - time.time()), 1) if self.ends_at else None,
             "phase_ends_at": self.ends_at, "round": rnd, "lots": lots,
             "rfqs": [dict(r) for r in self.rfqs] if open_ else [],
@@ -533,13 +536,18 @@ class Market:
         }
 
     # ---------------- request handling ----------------
-    def note_request(self):
+    def note_request(self, page: bool = False):
+        """page = the /trade page (X-Client: trade-page): it uses the same team budget, as on the real market,
+        but is kept out of the agent's request stats"""
         now = time.time()
-        self.requests += 1
-        self.req_times.append(now)
-        while self.req_times and self.req_times[0] < now - 1.0:
-            self.req_times.popleft()
-        self.max_rps = max(self.max_rps, len(self.req_times))
+        if page:
+            self.page_requests += 1
+        else:
+            self.requests += 1
+            self.req_times.append(now)
+            while self.req_times and self.req_times[0] < now - 1.0:
+                self.req_times.popleft()
+            self.max_rps = max(self.max_rps, len(self.req_times))
         self.bucket = min(10.0, self.bucket + (now - self.bucket_t) * 5.0)
         self.bucket_t = now
         if self.bucket < 1.0:
@@ -561,7 +569,7 @@ class Market:
             if method == "GET":
                 if t.appraisal is None:
                     return err(409, "NOT_AVAILABLE", "no appraisal submitted yet")
-                return 200, {"items": [{"lot_id": k, **v} for k, v in t.appraisal.items()]}
+                return 200, {"items": {k: {"lot_id": k, **v} for k, v in t.appraisal.items()}}
             if method == "POST":
                 if self.phase != "APPRAISAL":
                     return err(409, "WRONG_PHASE", f"appraisals are accepted only in APPRAISAL (now {self.phase})",
@@ -602,14 +610,31 @@ class Market:
             return 200, {"leaderboard": board}
         if path == "/v1/profile":
             if method == "POST":
-                t.name = str((body or {}).get("team_name") or t.name)
-            return 200, {"team_id": t.id, "team_name": t.name, "university": None}
+                tn, un = (body or {}).get("team_name"), (body or {}).get("university")
+                if not (isinstance(tn, str) and tn.strip() and isinstance(un, str) and un.strip()):
+                    return err(400, "INVALID_FIELD", "team_name and university are required", field="team_name")
+                t.team_name, t.university = tn.strip()[:40], un.strip()[:80]
+            done = bool(t.team_name and t.university)
+            if done:
+                t.name = f"{t.team_name} · {t.university}"
+            return 200, {"team_id": t.id, "team_name": t.team_name, "university": t.university, "complete": done,
+                         "shown_as": t.name if done else t.id}
         if path in ("/v1/sandbox/reveal", "/v1/reveal") and method == "GET":
             if self.phase != "CLOSED":
                 return err(409, "NOT_AVAILABLE", "reveal is available after the market closes")
             return 200, self.reveal()
-        if path == "/v1/sandbox/reset":
-            return err(409, "NOT_AVAILABLE", "reset is not available in this mode (competition)")
+        if path in ("/v1/sandbox/reset", "/v1/sandbox/advance"):
+            if self.a.mode != "sandbox":
+                return err(409, "NOT_AVAILABLE", f"{path} is sandbox only (mode {self.a.mode})")
+            if method != "POST":
+                return err(405, "METHOD_NOT_ALLOWED", f"{method} not allowed on {path}")
+            if path.endswith("advance"):
+                if self.phase == "WAITING":
+                    self.start()
+                elif self.phase != "CLOSED":
+                    self.ends_at = time.time()
+                    self.tick()
+                return 200, {"ok": True, "phase": self.phase}
         known = {"/v1/state", "/v1/calendar", "/v1/lots", "/v1/rfqs", "/v1/results", "/v1/standings", "/v1/leaderboard"}
         if path in known:
             return err(405, "METHOD_NOT_ALLOWED", f"{method} not allowed on {path}")
@@ -709,12 +734,20 @@ def make_handler(box: dict):
             n = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(n) if n else b""
             if path == "/v1/version":
-                return self.send(200, {"version": "mock-stage3-1", "mode": "competition", "mock": True,
-                                       "server_time": time.time()})
+                return self.send(200, {"api": "v1", "server": "mock-stage3", "mode": m.a.mode, "mock": True,
+                                       "server_time": time.time(), "trade_page": m.a.mode == "sandbox"})
             if path == "/mock/stats":
                 with m.lock:
                     return self.send(200, m.stats())
-            if path in ("/", "/trade"):
+            if path in ("/", "/trade", "/trade/"):        # the organizers' trade page (tools/mock_trade/trade.html)
+                return self.send(200, (TRADE_DIR / "trade.html").read_bytes(), ctype="text/html; charset=utf-8")
+            if path.startswith("/trade/fonts/") and "/" not in path[len("/trade/fonts/"):]:
+                f = TRADE_DIR / "fonts" / path[len("/trade/fonts/"):]
+                if f.is_file():
+                    return self.send(200, f.read_bytes(), ctype="font/ttf")
+            if path.startswith("/trade/"):
+                return self.send(*err(404, "UNKNOWN_ENDPOINT", f"no file {path}"))
+            if path == "/mock/ui":                        # our own dashboard (history, leaderboard)
                 return self.send(200, TRADE_HTML.read_bytes(), ctype="text/html; charset=utf-8")
             if path == "/mock/login" and method == "POST":
                 # the key typed in /trade becomes a valid key for our team (memory only, never logged or written)
@@ -727,7 +760,9 @@ def make_handler(box: dict):
                 box["keys"].add(k)
                 return self.send(200, {"ok": True, "team_id": OUR})
             auth = self.headers.get("Authorization", "")
-            if not any(auth == f"Bearer {k}" for k in box["keys"]):
+            if m.a.any_key and auth.startswith("Bearer sk-") and len(auth) > 14 and " " not in auth[7:]:
+                pass                                       # --any-key: any sk-... key plays as T23 (never stored)
+            elif not any(auth == f"Bearer {k}" for k in box["keys"]):
                 return self.send(*err(401, "UNAUTHORIZED", "missing or wrong key",
                                       hint="send Authorization: Bearer <team key> for this market "
                                            "(or enter your key at /trade first)"))
@@ -743,17 +778,26 @@ def make_handler(box: dict):
             if path == "/mock/start" and method == "POST":
                 m.start()
                 return self.send(200, {"ok": True})
-            m.start()
+            page = self.headers.get("X-Client") == "trade-page"
+            if path == "/v1/sandbox/reset" and method == "POST" and m.a.mode == "sandbox":
+                m.a.seed += 1
+                box["m"] = Market(m.a)
+                return self.send(200, {"ok": True, "phase": box["m"].phase})
+            if page and m.a.mode != "sandbox" and method != "GET" and path != "/v1/profile":
+                return self.send(*err(403, "MANUAL_DISABLED", "manual orders are disabled in this market; the agent must send",
+                                      hint="the team page is read-only during the competition"))
+            if not page:                                   # the page only looks: it must not start the game
+                m.start()
             with m.lock:
-                ok = m.note_request()
-                fault500 = m.a.faults and m.requests == m.fault500_at
+                ok = m.note_request(page)
+                fault500 = m.a.faults and not page and m.requests == m.fault500_at
             if not ok:
                 return self.send(*err(429, "RATE_LIMITED", "more than 5 requests per second",
                                       allowed={"retry_after_s": 1}), headers={"Retry-After": "1"})
             if fault500:
                 m.faults["http_500"] += 1
                 return self.send(500, {"error": {"code": "INTERNAL", "message": "mock fault: internal error"}})
-            if m.a.faults and path == "/v1/state" and m.rng.random() < 0.05:
+            if m.a.faults and not page and path == "/v1/state" and m.rng.random() < 0.05:
                 m.faults["state_delay_12s"] += 1
                 time.sleep(12)
             try:
@@ -797,6 +841,9 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--wait-start", action="store_true", help="stay in WAITING until the first request with our key")
     ap.add_argument("--loop", action="store_true", help="after CLOSED + linger start a new game (seed + 1)")
+    ap.add_argument("--mode", choices=["competition", "sandbox"], default="competition",
+                    help="sandbox: /trade page can send offers and has skip/reset buttons; competition: page read-only")
+    ap.add_argument("--any-key", action="store_true", help="accept any sk-... key as team T23 (keys are never stored)")
     a = ap.parse_args()
     m = Market(a)
     box = {"m": m, "keys": {a.team_key}}
