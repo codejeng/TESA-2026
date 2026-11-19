@@ -300,6 +300,144 @@ def test_lot_share_respects_flow_gate_and_list_rounds():
     assert S.calendar_weights(lst)[13] == (0.5, False) and S.calendar_weights(lst)[12] == (1.0, False)
 
 
+
+# ---------------- #44 ตารางขายตามปฏิทิน ----------------
+INSTANT = {"max_defect_pct": 15.0, "max_moisture_pct": 15.0, "min_screen": None}
+
+
+def _lot(lid, d, m, sc, bags=9):
+    return {"lot_id": lid, "kg_total": bags * 60, "kg_remaining": bags * 60, "kg_available": bags * 60,
+            "sample": {"defect_pct": d, "moisture_pct": m, "screen": sc}}
+
+
+def _rfq(rid, t, spec, bags=10):
+    return {"rfq_id": rid, "buyer": rid.lower(), "buyer_type": t, "kg": bags * 60, "bags": bags, "spec": spec}
+
+
+def _state(n, lots, rfqs, cap_bags):
+    return {"round": {"round_id": f"R{n}", "kind": "real", "number": n, "of": 15, "calendar": ""},
+            "lots": lots, "rfqs": rfqs, "round_capacity_kg": cap_bags * 60, "capacity_left_kg": cap_bags * 60}
+
+
+def _plan(state, ctx, k, schedule=True):
+    old = S.SCHEDULE
+    S.SCHEDULE = schedule
+    try:
+        ctx.notes = []
+        plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set())
+    finally:
+        S.SCHEDULE = old
+    offers = S.guard(state, ctx, plan)
+    for o in offers:                                    # เทส 7: ไม่มีซองต่ำกว่า 0.80 × TV
+        tv = ctx.offer_tv[(o["rfq_id"], o["lot_id"])]
+        assert o["price_per_kg"] >= 0.80 * tv - 1e-6, (o, tv)
+    return plan
+
+
+def _bags(plan, lot=None, rfq=None):
+    return sum(p["bags"] for p in plan if (lot is None or p["lot_id"] == lot) and (rfq is None or p["rfq_id"] == rfq))
+
+
+def test_lot_class():
+    lots = [_lot("S", 0.5, 11.0, 18), _lot("C", 5.0, 11.0, 15), _lot("I", 10.0, 13.5, 14)]
+    rfqs = [_rfq("S1", "SPECIALTY", SPECIALTY), _rfq("C1", "COMMERCIAL", COMMERCIAL), _rfq("I1", "INSTANT", INSTANT)]
+    st = _state(2, lots, rfqs, 5)
+    ctx = S.Context(_rules15(), CAL3, {"S": 130.0, "C": 110.0, "I": 100.0}, random.Random(1))
+    pairs = S.classify_spec(S.candidates(st, ctx), None, False)
+    assert [S.lot_class(l, pairs, None) for l in lots] == ["S", "C", "I"]
+    # no Specialty RFQ this round: S still from the sample (with margin) or from spec memory
+    only_i = [c for c in pairs if c["buyer_type"] == "INSTANT"]
+    assert S.lot_class(lots[0], only_i, None) == "S" and S.lot_class(lots[1], only_i, None) == "C"
+    edge = _lot("E", 2.9, 11.0, 16)                    # Specialty edge (screen == min) -> not by sample
+    assert S.lot_class(edge, [], None) == "C"
+    assert S.lot_class(edge, [], ({("E", (3.0, 12.5, 16))}, set())) == "S"
+
+
+def test_phase():
+    ctx = S.Context(_rules15(), CAL3, {}, random.Random(1))
+    assert [S.phase(n, ctx) for n in (3, 7, 10, 14)] == ["pre", "fest", "post", "close"]
+    assert S.phase(15, ctx) == "close" and S.phase(5, ctx) == "pre" and S.phase(6, ctx) == "fest"
+    flat = S.Context(_rules15(), [], {}, random.Random(1))
+    assert {S.phase(n, flat) for n in range(1, 16)} == {"post"}
+
+
+class _HoardMem:
+    def __init__(self, offers, n_rfq=3, rounds=(1, 2)):
+        self.sent = {}
+        self.rounds = [{"round_id": f"R{r}", "kind": "real", "market_summary": [
+            {"rfq_id": f"R{r}-{j}", "buyer": f"s{j}", "buyer_type": "SPECIALTY", "wanted_kg": 60, "bought_kg": 60,
+             "offers": offers, "price_min": 130, "price_max": 140, "price_avg": 135} for j in range(n_rfq)] + [
+            {"rfq_id": f"R{r}-c", "buyer": "c", "buyer_type": "COMMERCIAL", "wanted_kg": 600, "bought_kg": 600,
+             "offers": 40, "price_min": 100, "price_max": 110, "price_avg": 105}]} for r in rounds]
+
+
+def test_hoarding():
+    notes = []
+    assert S.hoarding(_HoardMem(4), before=6, notes=notes) is True
+    assert notes == ["hoarding: avg 4.0 offers/Specialty RFQ -> True"]
+    assert S.hoarding(_HoardMem(20), before=6) is False
+    assert S.hoarding(None) is None and S.hoarding(_HoardMem(4, n_rfq=1, rounds=(1,))) is None
+    assert S.hoarding(_HoardMem(4, rounds=(6, 7)), before=6) is None          # festival rounds do not count
+    m = _HoardMem(4)
+    m.rounds[0]["market_summary"][0]["bought_kg"] = 0                          # unsold RFQ does not count
+    m.rounds[0]["market_summary"][0]["offers"] = 100
+    assert S.hoarding(m, before=6) is True
+
+
+def _pre_case():
+    lots = [_lot("P", 0.5, 11.0, 18), _lot("Q", 5.0, 11.0, 15)]
+    rfqs = [_rfq("S1", "SPECIALTY", SPECIALTY, bags=1), _rfq("C1", "COMMERCIAL", COMMERCIAL)]
+    ctx = S.Context(_rules15(), CAL3, {"P": 100.0, "Q": 120.0}, random.Random(1))
+    return _state(2, lots, rfqs, 3), ctx, {"S1": 1.06, "C1": 1.0}
+
+
+def test_schedule_pre_festival_specialty_lot_first():
+    st, ctx, k = _pre_case()
+    off = _plan(st, ctx, k, schedule=False)
+    on = _plan(st, ctx, k)
+    notes = [n for n in ctx.notes if n.startswith(("schedule", "hoarding"))]
+    print("R2 notes:", notes)
+    assert _bags(on, "P") > _bags(off, "P"), (on, off)
+    assert _bags(on, "P", "S1") == 1                                           # Specialty route first
+    assert any(n.startswith("schedule R2 phase=pre hoard=None") and "P(S): 2" in n for n in notes)
+    ctx.memory = _HoardMem(4)                                                  # other teams hoard -> S x3 before festival
+    _plan(st, ctx, k)
+    assert any(n.startswith("schedule R2 phase=pre hoard=True") for n in ctx.notes), ctx.notes
+    frac = lambda h: (lambda W: W[2]["S"] / sum(w["S"] for j, w in W.items() if j >= 2))(S.schedule_weights(ctx, h))
+    assert abs(frac(None) - 1.5 / 13) < 1e-9 and abs(frac(True) - 3.0 / 19) < 1e-9
+
+
+def test_schedule_festival_instant_lot_first():
+    lots = [_lot("P", 0.5, 11.0, 18), _lot("I", 10.0, 13.5, 14)]
+    rfqs = [_rfq("S1", "SPECIALTY", SPECIALTY), _rfq("I1", "INSTANT", INSTANT)]
+    ctx = S.Context(_rules15(), CAL3, {"P": 130.0, "I": 100.0}, random.Random(1))
+    st = _state(7, lots, rfqs, 2)
+    k = {"S1": 1.06, "I1": 0.93}
+    plan = _plan(st, ctx, k)
+    notes = [n for n in ctx.notes if n.startswith(("schedule", "hoarding"))]
+    print("R7 notes:", notes)
+    assert any("phase=fest" in n and "I(I): 2" in n and "P(S): 1" in n for n in notes), notes
+    assert _bags(plan, "I") == 2 and _bags(plan, "P") == 0, plan              # budget 2: Instant lot first
+
+
+def test_schedule_post_and_flat_calendar_unchanged():
+    lots = [_lot("P", 0.5, 11.0, 18), _lot("Q", 5.0, 11.0, 15), _lot("I", 10.0, 13.5, 14)]
+    rfqs = [_rfq("S1", "SPECIALTY", SPECIALTY, bags=1), _rfq("C1", "COMMERCIAL", COMMERCIAL),
+            _rfq("C2", "COMMERCIAL", COMMERCIAL), _rfq("I1", "INSTANT", INSTANT)]
+    k = {"S1": 1.06, "C1": 1.0, "C2": 0.99, "I1": 0.93}
+    tv = {"P": 130.0, "Q": 110.0, "I": 100.0}
+    st = _state(10, lots, rfqs, 4)
+    ctx = S.Context(_rules15(), CAL3, tv, random.Random(1))
+    _plan(st, ctx, k)
+    print("R10 notes:", [n for n in ctx.notes if n.startswith(("schedule", "hoarding"))])
+    for n, cap in ((2, 4), (5, 3), (10, 6), (14, 2)):                         # flat calendar: identical plans
+        st = _state(n, lots, rfqs, cap)
+        flat = S.Context(_rules15(), [], tv, random.Random(1))
+        a, b = _plan(st, flat, k), _plan(st, flat, k, schedule=False)
+        key = lambda p: sorted((x["lot_id"], x["rfq_id"], x["bags"], x["markup"]) for x in p)
+        assert key(a) == key(b), (n, a, b)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

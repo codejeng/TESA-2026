@@ -57,6 +57,18 @@ FEST_RESERVE = False     # ล็อตเกรด Specialty: ก่อนเ�
 FEST_MAX_PRESSURE = 1.2  # pressure เกินนี้ (ขายไม่ทันแน่) เลิกเก็บของรอเทศกาล
 FEST_EXTRA = 1.0         # รอบเทศกาลนับน้ำหนักเพิ่มเท่านี้ ตอนแบ่งโควตาล็อต Specialty (1.0 = นับเป็น 2 เท่า)
 LOT_SHARE = True         # ทุกล็อตได้ขายอย่างน้อยส่วนแบ่งต่อรอบก่อน (ล็อตที่ขายได้แค่ Instant ไม่ถูกดันไปเทท้ายเกม)
+# ---- ตารางขายตามปฏิทิน (#44): ส่วนแบ่งต่อรอบของ LOT_SHARE ถ่วงตามประเภทล็อต (S/C/I) × ช่วงปฏิทิน ----
+SCHEDULE = True          # False = ส่วนแบ่งแบบเดิม (ถ่วง demand_weight อย่างเดียว)
+MULT = {                 # (ช่วง, ประเภทล็อต) -> ตัวคูณน้ำหนักรอบ · ปฏิทินที่ไม่มีเทศกาล = "post" ทุกรอบ (ตารางเรียบ)
+    "pre":   {"S": 1.5, "C": 1.0, "I": 1.0},
+    "fest":  {"S": 0.5, "C": 1.3, "I": 1.5},
+    "post":  {"S": 1.0, "C": 1.2, "I": 1.0},
+    "close": {"S": 1.0, "C": 1.0, "I": 1.0},
+}
+MULT_HOARD = {"pre": {"S": 3.0}, "fest": {"C": 1.5, "I": 2.0}}   # ทับ MULT เมื่อ hoarding() เป็น True
+HOARD_OFFERS = 8         # Specialty RFQ ที่ขายได้มีซองเฉลี่ยน้อยกว่านี้ (ก่อนเทศกาล) = ทีมอื่นตุนล็อต Specialty
+SPEC_S = {"max_defect_pct": 3.0, "max_moisture_pct": 12.5, "min_screen": 16}
+SPEC_C = {"max_defect_pct": 7.0, "max_moisture_pct": 12.5, "min_screen": None}
 SHORT_RATIO = 0.8        # "ผู้ซื้อยังขาดของ" (ขึ้นราคาเร็ว) = ซื้อได้ไม่ถึง 80% ของที่ต้องการ
 HOLD_WHILE_PROBING = True  # ล็อตที่กำลังหยั่งสเปกผู้ซื้อที่จ่ายดีกว่า: ขายทางรองแค่ส่วนแบ่งต่อรอบ รอผลหยั่งก่อน
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
@@ -168,6 +180,73 @@ def weighted_left(state: dict, ctx: Context, fest_extra: float = 0.0) -> float:
     W, rnd = calendar_weights(ctx), state["round"]
     start = 1 if rnd["kind"] == "practice" else rnd["number"]
     return sum(w * (1 + fest_extra if f else 1) for n, (w, f) in W.items() if n >= start)
+
+
+def lot_class(lot: dict, pairs: list[dict], spec_mem: tuple | None) -> str:
+    """"S" = ขาย Specialty ได้ (ทาง ok รอบนี้ / เคยผ่านสเปก Specialty / ตัวอย่างผ่านแบบมี margin)
+    "C" = ไม่ใช่ S แต่ขาย Commercial ได้ (เกณฑ์เดียวกัน) · "I" = ที่เหลือ"""
+    lid = lot["lot_id"]
+    passed = (spec_mem or (set(), set()))[0]
+    mine = [c for c in pairs if c["lot_id"] == lid and not c.get("probe")]
+    if (any(c.get("buyer_type") == "SPECIALTY" for c in mine)
+            or any(l == lid and d <= 3.0 and sc > 0 for l, (d, m, sc) in passed)
+            or spec_ok(lot["sample"], SPEC_S, margin=True)):
+        return "S"
+    if (any(c.get("buyer_type") == "COMMERCIAL" for c in mine)
+            or any(l == lid and d <= 7.0 and m <= 12.5 for l, (d, m, sc) in passed)
+            or spec_ok(lot["sample"], SPEC_C, margin=True)):
+        return "C"
+    return "I"
+
+
+def phase(n: int, ctx: Context) -> str:
+    """"fest" = รอบเทศกาล · "pre" = ก่อนเทศกาลรอบแรก · "post" = หลังเทศกาลที่ demand_weight >= 1
+    "close" = demand_weight < 1 · ปฏิทินไม่มีเทศกาล = "post" ทุกรอบ"""
+    W = calendar_weights(ctx)
+    fests = [j for j, (_, f) in W.items() if f]
+    if not fests:
+        return "post"
+    w, f = W.get(n, (1.0, False))
+    if f:
+        return "fest"
+    if n < min(fests):
+        return "pre"
+    return "post" if w >= 1.0 else "close"
+
+
+def hoarding(memory, before: int | None = None, notes: list | None = None) -> bool | None:
+    """ทีมอื่นตุนล็อต Specialty ไหม: ซองเฉลี่ยต่อ RFQ Specialty ที่ขายได้จริง (bought_kg > 0) ในรอบจริงก่อนรอบ before
+    None = ข้อมูลไม่ถึง 2 RFQ · True = เฉลี่ย < HOARD_OFFERS"""
+    counts = []
+    for r in getattr(memory, "rounds", None) or []:
+        if r.get("kind") != "real":
+            continue
+        m = re.search(r"\d+", str(r.get("round_id", "")))
+        if before is not None and (not m or int(m.group()) >= before):
+            continue
+        counts += [row.get("offers") or 0 for row in r.get("market_summary") or []
+                   if row.get("buyer_type") == "SPECIALTY" and (row.get("bought_kg") or 0) > 0]
+    if len(counts) < 2:
+        out, msg = None, f"hoarding: {len(counts)} Specialty RFQs sold -> None"
+    else:
+        avg = sum(counts) / len(counts)
+        out = avg < HOARD_OFFERS
+        msg = f"hoarding: avg {avg:.1f} offers/Specialty RFQ -> {out}"
+    if notes is not None:
+        notes.append(msg)
+    return out
+
+
+def schedule_weights(ctx: Context, hoard: bool | None) -> dict:
+    """รอบ -> {ประเภทล็อต: demand_weight × ตัวคูณของช่วงนั้น}"""
+    out = {}
+    for n, (w, _) in calendar_weights(ctx).items():
+        ph = phase(n, ctx)
+        m = dict(MULT[ph])
+        if hoard:
+            m.update(MULT_HOARD.get(ph, {}))
+        out[n] = {x: w * m[x] for x in "SCI"}
+    return out
 
 
 def rounds_left(state: dict, ctx: Context) -> int:
@@ -571,12 +650,37 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
 
     # ส่วนแบ่งขั้นต่ำต่อล็อต: ceil(กระสอบ × น้ำหนักรอบนี้ / น้ำหนักรอบที่เหลือ) ไปทางที่ดีที่สุดของล็อตนั้นก่อน
     # (ด่าน 2: Instant ล้นและราคาตกช่วงท้าย แต่ล็อต Instant ของเราได้ที่ทีหลังเพราะ RFQ ราคาสูงแย่งโควตาไปก่อน)
+    # ตารางขาย (SCHEDULE, #44): น้ำหนักรอบแยกตามประเภทล็อต S/C/I × ช่วงปฏิทิน (MULT, MULT_HOARD เมื่อทีมอื่นตุนของ)
     if LOT_SHARE and not last and state["round"]["kind"] != "practice":
-        W = calendar_weights(ctx)
-        wl = weighted_left(state, ctx) or 1.0
-        wnow = W.get(state["round"]["number"], (1.0, False))[0]
-        for lid in sorted(stock, key=lambda l: max((k_rfq[r] for r in routes[l]), default=0.0)):
-            share = min(stock[lid], math.ceil(stock[lid] * wnow / wl)) - sum(n for (l, _), n in alloc.items() if l == lid)
+        now = state["round"]["number"]
+        best_k = {l: max((k_rfq[r] for r in routes[l]), default=0.0) for l in stock}
+        order_lots = sorted(stock, key=lambda l: best_k[l])
+        if SCHEDULE:
+            fests = [j for j, (_, f) in calendar_weights(ctx).items() if f]
+            ph = phase(now, ctx)
+            hoard = hoarding(ctx.memory, min(fests) if fests else None, ctx.notes)
+            SW = schedule_weights(ctx, hoard)
+            lots_by_id = {l["lot_id"]: l for l in state["lots"]}
+            cls = {l: lot_class(lots_by_id[l], pairs, spec_mem) for l in stock}
+            rank = {"pre": {"S": 0}, "fest": {"I": 0, "C": 1}}.get(ph, {})
+            order_lots = sorted(order_lots, key=lambda l: rank.get(cls[l], 9))     # sort คงลำดับ k ต่ำก่อน
+            def target(l):
+                x = cls[l]
+                wl = sum(w[x] for j, w in SW.items() if j >= now) or 1.0
+                return min(stock[l], math.ceil(stock[l] * SW.get(now, {}).get(x, 1.0) / wl))
+        else:
+            ph, hoard = None, None
+            W = calendar_weights(ctx)
+            wl = weighted_left(state, ctx) or 1.0
+            wnow = W.get(now, (1.0, False))[0]
+            def target(l):
+                return min(stock[l], math.ceil(stock[l] * wnow / wl))
+        targets = {l: target(l) for l in order_lots}
+        if SCHEDULE and ctx.notes is not None:
+            ctx.notes.append(f"schedule R{now} phase={ph} hoard={hoard}: shares "
+                             "{" + ", ".join(f"{l}({cls[l]}): {targets[l]}" for l in order_lots) + "}")
+        for lid in order_lots:
+            share = targets[lid] - sum(n for (l, _), n in alloc.items() if l == lid)
             while share > 0 and budget > 0:
                 opts = [c for c in pairs if c["lot_id"] == lid and not c["probe"] and rfq_room[c["rfq_id"]] > 0
                         and k_rfq[c["rfq_id"]] >= open_best(lid) - SWITCH_GAP      # flow gate เหมือนลูปหลัก
@@ -585,7 +689,8 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
                         and not (lid in hold and ok_used[lid] >= hold[lid])]
                 if not opts:
                     break
-                c = max(opts, key=lambda c: k_rfq[c["rfq_id"]])
+                pre_s = SCHEDULE and ph == "pre" and cls[lid] == "S"     # ล็อต S ก่อนเทศกาล: ทาง Specialty ก่อนถ้ายังว่าง
+                c = max(opts, key=lambda c: (pre_s and c["buyer_type"] == "SPECIALTY", k_rfq[c["rfq_id"]]))
                 alloc[(lid, c["rfq_id"])] += 1
                 ok_used[lid] += 1
                 if rfqs[c["rfq_id"]]["buyer_type"] != "SPECIALTY":
