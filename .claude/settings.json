@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(python tools/wait_round.py *)",
+      "Bash(.venv/bin/python tools/wait_round.py *)",
+      "Bash(python tools/round_report.py *)",
+      "Bash(.venv/bin/python tools/round_report.py *)",
+      "Bash(python -m pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(pgrep *)",
+      "Bash(nohup .venv/bin/python main.py)",
+      "Bash(.venv/bin/python main.py)",
+      "Edit(/logs/agent.out)",
+      "Edit(/overrides.json)",
+      "Edit(/OPS_LOG.md)"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Edit(.env*)",
+      "Bash(* .env*)",
+      "Bash(*/.env*)",
+      "Bash(git push *)",
+      "Bash(curl *-X POST*)",
+      "Bash(curl *-XPOST*)",
+      "Bash(curl *--request POST*)",
+      "Bash(curl *--request=POST*)",
+      "Bash(curl *-d *)",
+      "Bash(curl *--data*)",
+      "Bash(curl *-F *)",
+      "Bash(curl *--form*)",
+      "Bash(curl *--json*)",
+      "Read(/tools/save_reveal.py)",
+      "Edit(/tools/save_reveal.py)",
+      "Bash(*save_reveal*)"
+    ]
+  }
+}
