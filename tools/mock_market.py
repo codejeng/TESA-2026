@@ -149,6 +149,8 @@ class Market:
             self.schedule += [("ROUND_OPEN", a.open_s, rd), ("ROUND_CLEARING", a.clear_s, rd)]
         self.step, self.ends_at = 0, time.time() + a.setup_s
         self.phase, self.round = "SETUP", None
+        if a.wait_start:                 # WAITING until our first keyed request (like the real "press start")
+            self.phase, self.ends_at = "WAITING", None
         self.rfqs, self.ceil = [], {}
         self.offers = {}                 # offer_id -> offer (all teams, current round)
         self.next_offer = 1
@@ -190,9 +192,15 @@ class Market:
         return out
 
     # ---------------- clock ----------------
+    def start(self):
+        with self.lock:
+            if self.phase == "WAITING":
+                self.phase, self.ends_at = "SETUP", time.time() + self.a.setup_s
+                self.events.append({"t": round(time.time(), 1), "phase": "SETUP", "round": None})
+
     def tick(self):
         with self.lock:
-            while self.phase != "CLOSED" and time.time() >= self.ends_at:
+            while self.phase not in ("CLOSED", "WAITING") and time.time() >= self.ends_at:
                 self._leave(self.phase, self.round)
                 self.step += 1
                 if self.step >= len(self.schedule):
@@ -676,7 +684,7 @@ class Market:
         return err(405, "METHOD_NOT_ALLOWED", f"{method} not allowed on {path}")
 
 
-def make_handler(m: Market):
+def make_handler(box: dict):
     class H(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -694,6 +702,7 @@ def make_handler(m: Market):
             self.wfile.write(data)
 
         def go(self, method):
+            m = box["m"]
             u = urlparse(self.path)
             path, query = u.path, parse_qs(u.query)
             n = int(self.headers.get("Content-Length") or 0)
@@ -708,6 +717,7 @@ def make_handler(m: Market):
             if auth != f"Bearer {m.a.team_key}":
                 return self.send(*err(401, "UNAUTHORIZED", "missing or wrong key",
                                       hint="send Authorization: Bearer <team key> for this market"))
+            m.start()
             with m.lock:
                 ok = m.note_request()
                 fault500 = m.a.faults and m.requests == m.fault500_at
@@ -759,9 +769,12 @@ def main():
     ap.add_argument("--fest-premium", type=float, default=0.02, help="extra Specialty ceiling in festival rounds")
     ap.add_argument("--linger-s", type=float, default=60, help="keep serving this long after CLOSED")
     ap.add_argument("--out")
+    ap.add_argument("--wait-start", action="store_true", help="stay in WAITING until the first request with our key")
+    ap.add_argument("--loop", action="store_true", help="after CLOSED + linger start a new game (seed + 1)")
     a = ap.parse_args()
     m = Market(a)
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(m))
+    box = {"m": m}
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(box))
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(f"mock market on http://127.0.0.1:{a.port} · scenario {a.scenario} · faults {a.faults} · "
@@ -770,8 +783,12 @@ def main():
         m.tick()
         if m.phase == "CLOSED":
             time.sleep(a.linger_s)
-            srv.shutdown()
-            return
+            if not a.loop:
+                srv.shutdown()
+                return
+            a.seed += 1
+            m = box["m"] = Market(a)
+            print(f"new game · seed {a.seed}", flush=True)
         time.sleep(0.1)
 
 

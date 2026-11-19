@@ -20,6 +20,9 @@ tools/run_mock.sh nohoard --restart       # kill the agent after it sends R7 (re
 tools/run_mock.sh hoard -- --open-s 7 --clear-s 2 --setup-s 3 --appraisal-s 6    # faster game (~2.5 min)
 ```
 
+- Standing sandbox for manual tests: `.venv/bin/python tools/mock_market.py --scenario hoard --port 8200 --wait-start --loop`
+  (`--wait-start`: WAITING until the first request with the key, like pressing start · `--loop`: new game after each close)
+  then run the agent with `MARKET_URL=http://127.0.0.1:8200 TEAM_KEY=sk-T23-mock USE_LLM=0` (`--forever` for several games).
 - Default timing ≈ 8 min per game: setup 10 s, appraisal 20 s, 2 practice + 15 real rounds of 20 s open + 5 s clearing
   (real: 600 / 900 / 300 / 60 s). Run several scenarios at once with `--port`.
 - Output in `/tmp/t23-mock-<scenario>[-faults][-restart]/`: `agent.log`, `mock.log`, `mock-result.json`, `check.txt`,
