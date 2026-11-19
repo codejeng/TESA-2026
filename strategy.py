@@ -56,6 +56,7 @@ CAL_PRESSURE = True      # pressure นับรอบที่เหลือ�
 FEST_RESERVE = True      # ล็อตเกรด Specialty: ก่อนเทศกาลขายทางอื่นตามโควตา เก็บส่วนหนึ่งไว้ขายช่วงเทศกาล
 FEST_MAX_PRESSURE = 1.2  # pressure เกินนี้ (ขายไม่ทันแน่) เลิกเก็บของรอเทศกาล
 FEST_EXTRA = 1.0         # รอบเทศกาลนับน้ำหนักเพิ่มเท่านี้ ตอนแบ่งโควตาล็อต Specialty (1.0 = นับเป็น 2 เท่า)
+LOT_SHARE = True         # ทุกล็อตได้ขายอย่างน้อยส่วนแบ่งต่อรอบก่อน (ล็อตที่ขายได้แค่ Instant ไม่ถูกดันไปเทท้ายเกม)
 SHORT_RATIO = 0.8        # "ผู้ซื้อยังขาดของ" (ขึ้นราคาเร็ว) = ซื้อได้ไม่ถึง 80% ของที่ต้องการ
 HOLD_WHILE_PROBING = True  # ล็อตที่กำลังหยั่งสเปกผู้ซื้อที่จ่ายดีกว่า: ขายทางรองแค่ส่วนแบ่งต่อรอบ รอผลหยั่งก่อน
 SWITCH_GAP = 0.03    # ล็อตไปขายผู้ซื้อที่จ่ายต่ำกว่าทางที่ดีสุดของมันได้ไม่เกินเท่านี้
@@ -563,6 +564,31 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
         stock[c["lot_id"]] -= 1
         rfq_room[c["rfq_id"]] -= 1
         budget -= 1
+
+    # ส่วนแบ่งขั้นต่ำต่อล็อต: ceil(กระสอบ × น้ำหนักรอบนี้ / น้ำหนักรอบที่เหลือ) ไปทางที่ดีที่สุดของล็อตนั้นก่อน
+    # (ด่าน 2: Instant ล้นและราคาตกช่วงท้าย แต่ล็อต Instant ของเราได้ที่ทีหลังเพราะ RFQ ราคาสูงแย่งโควตาไปก่อน)
+    if LOT_SHARE and not last and state["round"]["kind"] != "practice":
+        W = calendar_weights(ctx)
+        wl = weighted_left(state, ctx) or 1.0
+        wnow = W.get(state["round"]["number"], (1.0, False))[0]
+        for lid in sorted(stock, key=lambda l: max((k_rfq[r] for r in routes[l]), default=0.0)):
+            share = min(stock[lid], math.ceil(stock[lid] * wnow / wl)) - sum(n for (l, _), n in alloc.items() if l == lid)
+            while share > 0 and budget > 0:
+                opts = [c for c in pairs if c["lot_id"] == lid and not c["probe"] and rfq_room[c["rfq_id"]] > 0
+                        and not (lid in fest_q and rfqs[c["rfq_id"]]["buyer_type"] != "SPECIALTY"
+                                 and fest_used[lid] >= fest_q[lid])
+                        and not (lid in hold and ok_used[lid] >= hold[lid])]
+                if not opts:
+                    break
+                c = max(opts, key=lambda c: k_rfq[c["rfq_id"]])
+                alloc[(lid, c["rfq_id"])] += 1
+                ok_used[lid] += 1
+                if rfqs[c["rfq_id"]]["buyer_type"] != "SPECIALTY":
+                    fest_used[lid] += 1
+                stock[lid] -= 1
+                rfq_room[c["rfq_id"]] -= 1
+                budget -= 1
+                share -= 1
 
     while budget > 0:
         progressed = False

@@ -249,6 +249,31 @@ def test_festival_reserve_limits_commercial_before_festival():
     assert {p["rfq_id"]: p["bags"] for p in plan}.get("C1", 0) == 4
 
 
+
+def test_lot_share_gives_instant_only_lot_its_share():
+    """ด่าน 2: LOT-3 (ขายได้แค่ Instant) ได้ที่ทีหลังเพราะ RFQ ราคาสูงใช้โควตาหมด แล้วไปเทตอนราคา Instant ตก"""
+    INST = {"max_defect_pct": 15.0, "max_moisture_pct": 15.0, "min_screen": None}
+    lots = [{"lot_id": "C", "kg_total": 600, "kg_remaining": 600, "kg_available": 600,
+             "sample": {"defect_pct": 4.0, "moisture_pct": 11.0, "screen": 15}},
+            {"lot_id": "I", "kg_total": 600, "kg_remaining": 600, "kg_available": 600,
+             "sample": {"defect_pct": 10.0, "moisture_pct": 13.5, "screen": 14}}]
+    rfqs = [{"rfq_id": f"C{j}", "buyer": f"c{j}", "buyer_type": "COMMERCIAL", "kg": 600, "bags": 10, "spec": COMMERCIAL}
+            for j in (1, 2, 3)] + [{"rfq_id": "I1", "buyer": "i1", "buyer_type": "INSTANT", "kg": 600, "bags": 10, "spec": INST}]
+    state = {"round": {"round_id": "R2", "kind": "real", "number": 2, "of": 15, "calendar": "ปกติ"},
+             "lots": lots, "rfqs": rfqs, "round_capacity_kg": 180, "capacity_left_kg": 180}
+    ctx = S.Context(_rules15(), CAL3, {"C": 110.0, "I": 100.0}, random.Random(1))
+    k = {"C1": 1.02, "C2": 1.01, "C3": 1.0, "I1": 0.93}
+    def run():
+        plan = S.build_plan(state, ctx, S.candidates(state, ctx), k, set(), flow=True)
+        return sum(p["bags"] for p in plan if p["rfq_id"] == "I1"), sum(p["bags"] for p in plan if p["rfq_id"] != "I1")
+    assert run() == (1, 2)          # 10 bags / 13.5 weighted rounds -> 1 bag share for the Instant-only lot
+    S.LOT_SHARE = False
+    try:
+        assert run() == (0, 3)      # old: the three Commercial RFQs take the whole 3-bag budget first
+    finally:
+        S.LOT_SHARE = True
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
