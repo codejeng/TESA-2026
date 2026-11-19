@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Run the real agent (main.py, unchanged) against the local stage-3 mock market, in a copy under /tmp.
 #
-#   tools/run_mock.sh <nohoard|hoard|dump> [--faults] [--restart] [--port 8099] [--seed N] [-- extra mock args]
+#   tools/run_mock.sh <nohoard|hoard|dump> [--faults] [--restart] [--port 8099] [--seed N] [--tag T] [--schedule-off]
+#                     [-- extra mock args]
 #
+# --tag T: suffix for the output folder (run several games of one scenario at once).
+# --schedule-off: set SCHEDULE = False in the /tmp copy of strategy.py only (A/B test; the repo is not touched).
 # --restart: kill the agent right after it sends R7 and start it again at once (expects round_already_sent),
 #            then kill it after R10 and start it again only when R12 opens (R11 missed, R10 results backfilled).
 # The agent copy never sees .env / .env.race: only *.py are copied and the env is given on the command line.
@@ -11,13 +14,15 @@ set -euo pipefail
 
 SC="${1:?usage: tools/run_mock.sh <nohoard|hoard|dump> [--faults] [--restart] [--port N] [--seed N]}"
 shift
-FAULTS="" RESTART="" PORT=8099 SEED=20261120 EXTRA=()
+FAULTS="" RESTART="" PORT=8099 SEED=20261120 TAG="" SCHED_OFF="" EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --faults) FAULTS=1 ;;
     --restart) RESTART=1 ;;
     --port) PORT="$2"; shift ;;
     --seed) SEED="$2"; shift ;;
+    --tag) TAG="$2"; shift ;;
+    --schedule-off) SCHED_OFF=1 ;;
     --) shift; EXTRA=("$@"); break ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
@@ -26,7 +31,7 @@ done
 
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$SRC/.venv/bin/python"
-NAME="t23-mock-$SC${FAULTS:+-faults}${RESTART:+-restart}"
+NAME="t23-mock-$SC${FAULTS:+-faults}${RESTART:+-restart}${TAG:+-$TAG}"
 DIR="/tmp/$NAME"
 URL="http://127.0.0.1:$PORT"
 
@@ -34,6 +39,10 @@ rm -rf "$DIR"
 mkdir -p "$DIR/agent"
 cp "$SRC"/*.py "$DIR/agent/"            # agent code only: no .env*, no logs/, no data/
 rm -f "$DIR/agent/pack.py"
+if [ -n "$SCHED_OFF" ]; then
+  sed -i 's/^SCHEDULE = True/SCHEDULE = False/' "$DIR/agent/strategy.py"
+  grep -q '^SCHEDULE = False' "$DIR/agent/strategy.py" || { echo "could not turn SCHEDULE off" >&2; exit 2; }
+fi
 
 MOCK_ARGS=(--scenario "$SC" --port "$PORT" --seed "$SEED" --out "$DIR/mock-result.json" --linger-s 30)
 [ -n "$FAULTS" ] && MOCK_ARGS+=(--faults)
@@ -61,7 +70,7 @@ wait_for() {     # wait_for <python expr> : poll until it prints True
   done
 }
 
-echo "scenario $SC · faults ${FAULTS:-0} · restart ${RESTART:-0} · $DIR"
+echo "scenario $SC · seed $SEED · schedule $([ -n "$SCHED_OFF" ] && echo off || echo on) · faults ${FAULTS:-0} · restart ${RESTART:-0} · $DIR"
 start_agent
 if [ -n "$RESTART" ]; then
   wait_for "s['round']=='R7' and s['phase']=='ROUND_OPEN' and s['our_open_offers']>0"

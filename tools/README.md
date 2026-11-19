@@ -17,6 +17,7 @@ tools/run_mock.sh nohoard                 # hoarder bots 0%
 tools/run_mock.sh hoard                   # hoarder bots 60%: hold Specialty lots until the festival (R6–8)
 tools/run_mock.sh dump --faults           # dumper bots 50% (−0.05 in the last 3 rounds) + faults
 tools/run_mock.sh nohoard --restart       # kill the agent after it sends R7 (restart at once), and after R10 (restart at R12)
+tools/run_mock.sh hoard --seed 1 --tag s1-off --schedule-off   # A/B: SCHEDULE = False in the /tmp copy only
 tools/run_mock.sh hoard -- --open-s 7 --clear-s 2 --setup-s 3 --appraisal-s 6    # faster game (~2.5 min)
 ```
 

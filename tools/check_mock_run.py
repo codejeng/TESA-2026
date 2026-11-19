@@ -64,7 +64,8 @@ def main() -> int:
           f"min markup {min((o['markup'] for offs in mem['sent'].values() for o in offs), default=None)} · "
           f"below 0.80 × true TV (sample noise, info): {true_low[:4] or '-'}")
 
-    # 5. schedule notes vs calendar
+    # 5. schedule notes vs calendar (only when the agent copy runs with SCHEDULE = True)
+    sched_on = bool(re.search(r"^SCHEDULE = True", (d / "agent" / "strategy.py").read_text(encoding="utf-8"), re.M))
     seen, wrong = {}, []
     for r in ev("offers_sent"):
         for n in r.get("notes") or []:
@@ -75,8 +76,11 @@ def main() -> int:
         if EXPECT.get(n) != ph:
             wrong.append(f"R{n}={ph}")
     absent = [f"R{n}" for n in range(1, 15) if n not in seen and f"R{n}" not in skipped | again]
-    check("schedule phase notes match the calendar", not wrong and not absent,
-          f"wrong {wrong or '-'} · missing {absent or '-'} · R15 (last round, ladder) {seen.get(15, 'no note')}")
+    if not sched_on:
+        print("  skip  schedule / hoarding notes: agent runs with SCHEDULE = False")
+    else:
+        check("schedule phase notes match the calendar", not wrong and not absent,
+              f"wrong {wrong or '-'} · missing {absent or '-'} · R15 (last round, ladder) {seen.get(15, 'no note')}")
 
     # 6. hoarding signal
     hoard = {}
@@ -89,7 +93,9 @@ def main() -> int:
     detail = " · ".join(f"R{n}:{v}" for n, (v, _) in sorted(hoard.items()) if n > 0)
     mkt = " ".join(f"{h['round']}:{h['specialty_offers_per_sold_rfq']}" for h in mock["history"] if h["round"] in
                    [f"R{i}" for i in range(1, 6)])
-    if a.scenario == "hoard":
+    if not sched_on:
+        pass
+    elif a.scenario == "hoard":
         check("hoarding -> True by R5 (hoard)", first_true is not None and first_true <= 5,
               f"first True R{first_true} · {detail} · market offers/sold Specialty RFQ {mkt}")
     else:
