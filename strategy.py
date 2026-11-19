@@ -375,7 +375,8 @@ def learn(state: dict, ctx: Context) -> dict:
 
         for buyer, rows in rows_by_buyer.items():
             t = rows[0]["buyer_type"]
-            b = buyers.setdefault(buyer, {"type": t, "k": START.get(t, 1.0), "ceil": [], "own": False, "last": ""})
+            b = buyers.setdefault(buyer, {"type": t, "k": START.get(t, 1.0), "ceil": [], "sold": [], "own": False,
+                                          "last": ""})
             sold = [r for r in rows if r["bought_kg"] > 0 and r.get("price_max")]
             k_mkt = max(MIN_MARKUP, max(r["price_max"] for r in sold) / tv_ref[t] + MKT_ADJ) if sold else None
             short = any(r["bought_kg"] < SHORT_RATIO * r["wanted_kg"] for r in rows)
@@ -389,14 +390,23 @@ def learn(state: dict, ctx: Context) -> dict:
             if clean:
                 b["own"] = True
                 sold_k = [x[1] for x in clean if x[0] in ("ACCEPTED", "PARTIAL")]
+                if sold_k:
+                    b["sold"].append((i, max(sold_k)))
+                hit_recent = any(i - j < CEIL_MEMORY for j, _ in b["ceil"])     # ชนเพดานใน CEIL_MEMORY รอบก่อนหน้า
                 if "ABOVE_LIMIT" in st_all:
                     c = min(x[1] for x in clean if x[0] == "ABOVE_LIMIT")
                     b["ceil"].append((i, c))
                     new = max(sold_k) if sold_k else c - BELOW_CEIL
                     why = "เกินเพดานบางซอง คงราคาที่ขายได้" if sold_k else f"เกินเพดาน {c:.3f}"
+                    # เพดานแต่ละ RFQ สุ่มต่างกัน: ราคาที่ถูกปฏิเสธ − 0.02 อาจยังเกิน -> กลับไป k ที่ผู้ซื้อรายนี้เพิ่งรับ
+                    ok_k = [k for j, k in b["sold"] if i - j < CEIL_MEMORY]
+                    if ok_k and new > max(ok_k):
+                        new = max(ok_k)
+                        why += f" · กลับไปราคาที่เคยขายได้ {new:.3f}"
                 elif all(st == "ACCEPTED" for st in st_all):
-                    new = max(x[1] for x in clean) + (UP_FAST if short else UP)
-                    why = "ขายหมด" + (" + ผู้ซื้อยังขาดของ" if short else "")
+                    fast = short and not hit_recent
+                    new = max(x[1] for x in clean) + (UP_FAST if fast else UP)
+                    why = "ขายหมด" + (" + ผู้ซื้อยังขาดของ" if short else "") + (" · เพิ่งชนเพดาน ขึ้นช้า" if short and hit_recent else "")
                 elif all(st == "OUTBID" for st in st_all):
                     lo = min(x[1] for x in clean)
                     new = lo - DOWN

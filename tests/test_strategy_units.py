@@ -442,6 +442,38 @@ def test_schedule_post_and_flat_calendar_unchanged():
         assert key(a) == key(b), (n, a, b)
 
 
+
+def test_above_limit_falls_back_to_last_accepted_k():
+    """Mock market #44 (hoard): 5 อินสแตนท์ไทย sold at 0.958, then 1.008 hit ABOVE_LIMIT.
+    Old: 1.008 − 0.02 = 0.988 (still above, ABOVE_LIMIT again for 3 rounds). Now: back to 0.958.
+    Next round sold out with the buyer short -> +UP (0.01) only, not +UP_FAST, while the ceiling is recent."""
+    INST = {"max_defect_pct": 15.0, "max_moisture_pct": 14.0, "min_screen": None}
+    lot = {"lot_id": "L", "kg_total": 1200, "kg_remaining": 600, "kg_available": 600,
+           "sample": {"defect_pct": 10.0, "moisture_pct": 12.0, "screen": 15}}
+    def rnd(rid, k, st):
+        sent = [{"rfq_id": f"{rid}-1", "lot_id": "L", "kg": 60, "price_per_kg": round(k * 100, 2),
+                 "buyer_type": "INSTANT", "spec": INST, "tv_used": 100.0, "markup": k}]
+        res = {"round_id": rid, "kind": "real",
+               "my_offers": [{"rfq_id": f"{rid}-1", "lot_id": "L", "kg": 60, "price_per_kg": k * 100, "status": st,
+                              "filled_kg": 60 if st == "ACCEPTED" else 0}],
+               "market_summary": [{"rfq_id": f"{rid}-1", "buyer": "5 อินสแตนท์ไทย", "buyer_type": "INSTANT",
+                                   "wanted_kg": 1500, "bought_kg": 600, "offers": 6, "price_min": 90.0,
+                                   "price_max": 96.0, "price_avg": 93.0}]}     # buyer short (600 of 1500)
+        return sent, res
+    rounds = [rnd("R4", 0.958, "ACCEPTED"), rnd("R5", 1.008, "ABOVE_LIMIT"), rnd("R6", 0.958, "ACCEPTED")]
+    state = {"round": {"round_id": "R6", "kind": "real", "number": 6, "of": 15, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": [], "round_capacity_kg": 300, "capacity_left_kg": 300}
+    def k_after(n):
+        mem = _Mem([r for _, r in rounds[:n]], {r["round_id"]: s for s, r in rounds[:n]})
+        b = S.learn(state, S.Context(RULES, [], {"L": 100.0}, random.Random(1), mem))["buyers"]["5 อินสแตนท์ไทย"]
+        return b["k"], b["last"]
+    k1, why1 = k_after(2)
+    k2, why2 = k_after(3)
+    print("fallback:", k1, why1, "|", k2, why2)
+    assert k1 <= 0.958 + 1e-9 and "กลับไปราคาที่เคยขายได้ 0.958" in why1
+    assert abs(k2 - 0.968) < 1e-9 and "เพิ่งชนเพดาน ขึ้นช้า" in why2
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
