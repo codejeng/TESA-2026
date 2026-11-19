@@ -232,6 +232,15 @@ def test_pressure_uses_calendar():
 
 
 def test_festival_reserve_limits_commercial_before_festival():
+    old = S.FEST_RESERVE
+    S.FEST_RESERVE = True
+    try:
+        _festival_reserve_case()
+    finally:
+        S.FEST_RESERVE = old
+
+
+def _festival_reserve_case():
     lot = {"lot_id": "P", "kg_total": 540, "kg_remaining": 540, "kg_available": 540,
            "sample": {"defect_pct": 0.5, "moisture_pct": 11.0, "screen": 18}}
     rfqs = [{"rfq_id": "S1", "buyer": "s1", "buyer_type": "SPECIALTY", "kg": 60, "bags": 1, "spec": SPECIALTY},
