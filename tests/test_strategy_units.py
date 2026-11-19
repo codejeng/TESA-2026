@@ -392,31 +392,35 @@ def _pre_case():
 
 
 def test_schedule_pre_festival_specialty_lot_first():
+    """ยังไม่เห็นว่าทีมอื่นตุน (hoard None/False) = ส่วนแบ่งแบบเดิมทุกกระสอบ · ตุนจริง (True) = ขาย S มากขึ้นก่อนเทศกาล"""
     st, ctx, k = _pre_case()
     off = _plan(st, ctx, k, schedule=False)
     on = _plan(st, ctx, k)
+    key = lambda p: sorted((x["lot_id"], x["rfq_id"], x["bags"]) for x in p)
+    assert key(on) == key(off), (on, off)
+    assert any(n.startswith("schedule R2 phase=pre hoard=None") for n in ctx.notes), ctx.notes
+    ctx.memory = _HoardMem(4)                                                  # other teams hoard -> S x3 before festival
+    on = _plan(st, ctx, k)
     notes = [n for n in ctx.notes if n.startswith(("schedule", "hoarding"))]
     print("R2 notes:", notes)
+    assert any(n.startswith("schedule R2 phase=pre hoard=True") for n in notes), notes
     assert _bags(on, "P") > _bags(off, "P"), (on, off)
     assert _bags(on, "P", "S1") == 1                                           # Specialty route first
-    assert any(n.startswith("schedule R2 phase=pre hoard=None") and "P(S): 2" in n for n in notes)
-    ctx.memory = _HoardMem(4)                                                  # other teams hoard -> S x3 before festival
-    _plan(st, ctx, k)
-    assert any(n.startswith("schedule R2 phase=pre hoard=True") for n in ctx.notes), ctx.notes
     frac = lambda h: (lambda W: W[2]["S"] / sum(w["S"] for j, w in W.items() if j >= 2))(S.schedule_weights(ctx, h))
-    assert abs(frac(None) - 1.5 / 13) < 1e-9 and abs(frac(True) - 3.0 / 19) < 1e-9
+    assert abs(frac(None) - 1.0 / 12.5) < 1e-9 and abs(frac(True) - 3.0 / 19) < 1e-9
 
 
 def test_schedule_festival_instant_lot_first():
     lots = [_lot("P", 0.5, 11.0, 18), _lot("I", 10.0, 13.5, 14)]
     rfqs = [_rfq("S1", "SPECIALTY", SPECIALTY), _rfq("I1", "INSTANT", INSTANT)]
     ctx = S.Context(_rules15(), CAL3, {"P": 130.0, "I": 100.0}, random.Random(1))
+    ctx.memory = _HoardMem(4)
     st = _state(7, lots, rfqs, 2)
     k = {"S1": 1.06, "I1": 0.93}
     plan = _plan(st, ctx, k)
     notes = [n for n in ctx.notes if n.startswith(("schedule", "hoarding"))]
     print("R7 notes:", notes)
-    assert any("phase=fest" in n and "I(I): 2" in n and "P(S): 1" in n for n in notes), notes
+    assert any("phase=fest" in n and "hoard=True" in n for n in notes), notes
     assert _bags(plan, "I") == 2 and _bags(plan, "P") == 0, plan              # budget 2: Instant lot first
 
 

@@ -59,13 +59,17 @@ FEST_EXTRA = 1.0         # รอบเทศกาลนับน้ำหน�
 LOT_SHARE = True         # ทุกล็อตได้ขายอย่างน้อยส่วนแบ่งต่อรอบก่อน (ล็อตที่ขายได้แค่ Instant ไม่ถูกดันไปเทท้ายเกม)
 # ---- ตารางขายตามปฏิทิน (#44): ส่วนแบ่งต่อรอบของ LOT_SHARE ถ่วงตามประเภทล็อต (S/C/I) × ช่วงปฏิทิน ----
 SCHEDULE = True          # False = ส่วนแบ่งแบบเดิม (ถ่วง demand_weight อย่างเดียว)
-MULT = {                 # (ช่วง, ประเภทล็อต) -> ตัวคูณน้ำหนักรอบ · ปฏิทินที่ไม่มีเทศกาล = "post" ทุกรอบ (ตารางเรียบ)
-    "pre":   {"S": 1.5, "C": 1.0, "I": 1.0},
-    "fest":  {"S": 0.5, "C": 1.3, "I": 1.5},
-    "post":  {"S": 1.0, "C": 1.2, "I": 1.0},
+MULT = {                 # (ช่วง, ประเภทล็อต) -> ตัวคูณน้ำหนักรอบ · ใช้เมื่อยังไม่เห็นว่าทีมอื่นตุน (hoarding ไม่ใช่ True)
+    "pre":   {"S": 1.0, "C": 1.0, "I": 1.0},          # = ส่วนแบ่งแบบเดิม: ถ้าทีมอื่นไม่ตุน เทศกาลอาจมีพรีเมียมจริง ไม่เดิมพัน
+    "fest":  {"S": 1.0, "C": 1.0, "I": 1.0},
+    "post":  {"S": 1.0, "C": 1.0, "I": 1.0},
     "close": {"S": 1.0, "C": 1.0, "I": 1.0},
 }
-MULT_HOARD = {"pre": {"S": 3.0}, "fest": {"C": 1.5, "I": 2.0}}   # ทับ MULT เมื่อ hoarding() เป็น True
+MULT_HOARD = {           # ทับ MULT เมื่อ hoarding() เป็น True: ขาย S ก่อนเทศกาล · ช่วงเทศกาลเน้น C/I · หลังเทศกาลเร่ง C
+    "pre":  {"S": 3.0},
+    "fest": {"S": 0.5, "C": 1.5, "I": 2.0},
+    "post": {"C": 1.2},
+}
 HOARD_OFFERS = 8         # Specialty RFQ ที่ขายได้มีซองเฉลี่ยน้อยกว่านี้ (ก่อนเทศกาล) = ทีมอื่นตุนล็อต Specialty
 SPEC_S = {"max_defect_pct": 3.0, "max_moisture_pct": 12.5, "min_screen": 16}
 SPEC_C = {"max_defect_pct": 7.0, "max_moisture_pct": 12.5, "min_screen": None}
@@ -662,7 +666,9 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             SW = schedule_weights(ctx, hoard)
             lots_by_id = {l["lot_id"]: l for l in state["lots"]}
             cls = {l: lot_class(lots_by_id[l], pairs, spec_mem) for l in stock}
-            rank = {"pre": {"S": 0}, "fest": {"I": 0, "C": 1}}.get(ph, {})
+            # ช่วงเทศกาลให้ I แล้ว C ได้โควตาก่อน · ช่วงอื่นคงลำดับ k ต่ำก่อน (ให้ S ขึ้นก่อนตอน pre ทำให้ล็อต Instant
+            # อดโควตาเหมือนด่าน 2: จำลองแล้ว PR −0.9% แม้ตัวคูณเป็น 1 ทั้งหมด)
+            rank = {"fest": {"I": 0, "C": 1}}.get(ph, {}) if hoard else {}
             order_lots = sorted(order_lots, key=lambda l: rank.get(cls[l], 9))     # sort คงลำดับ k ต่ำก่อน
             def target(l):
                 x = cls[l]
