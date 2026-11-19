@@ -21,6 +21,16 @@ from memory import Memory
 HERE = Path(__file__).parent
 LOGS = HERE / "logs"
 OVERRIDES = HERE / "overrides.json"   # #44: ปรับค่าระหว่างแข่งได้โดยไม่ต้องรีสตาร์ท (strategy.apply_overrides)
+RETRY_UNTIL = 20                      # ส่งให้เสร็จก่อน seconds_left เท่านี้ · ต่ำกว่านี้ยังลองต่อจนรอบปิด (log send_late)
+SEND_AT_MIN = 30                      # SEND_AT ต่ำสุด: เหลือเวลาลองส่งซ้ำได้หลายครั้งก่อน RETRY_UNTIL
+
+
+def send_at() -> float:
+    """SEND_AT (วินาทีที่เหลือ) = เริ่ม decide/ส่งเมื่อ seconds_left <= ค่านี้ · รอบสั้นกว่านี้ = ส่งทันที"""
+    try:
+        return max(SEND_AT_MIN, float(os.environ.get("SEND_AT", "180")))
+    except ValueError:
+        return 180.0
 
 
 def load_env(path: Path) -> None:
@@ -80,6 +90,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
     info = api.calendar()
     rules = info["rules"]
     memory, tv, acted, game = None, {}, set(), None
+    recorded, waited, failed = set(), set(), set()
     rng = random.Random()
     while True:
         try:
@@ -97,6 +108,7 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
             except Exception as e:                  # noqa: BLE001 — keep the last rules we had
                 log("calendar_error", error=str(e))
             game, acted, tv, tried = lots_key, set(), estimate_lots(rules, state["lots"]), set()
+            recorded, waited, failed = set(), set(), set()
             tag = hashlib.sha1(repr(lots_key).encode()).hexdigest()[:8]
             memory = Memory(LOGS / f"memory-{state['market']}-{tag}.json")
             log("new_game", market=state["market"], lots=len(state["lots"]), tv=tv)
@@ -111,15 +123,29 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
 
         elif phase == "ROUND_OPEN" and not state["paused"] and state["round"]["round_id"] not in acted:
             rid = state["round"]["round_id"]
-            acted.add(rid)
-            memory.record_results(state["last_results"])
-            backfill(api, memory, state, tried)
+            left = state["seconds_left"]
+            if rid not in recorded:                 # ผลรอบก่อนเข้า memory ทันที (คน/AI ดูผลแล้วปรับ overrides ก่อนส่งได้)
+                recorded.add(rid)
+                memory.record_results(state["last_results"])
+                backfill(api, memory, state, tried)
             if any(o["round_id"] == rid for o in state["my_open_offers"]):
                 # restarted after sending this round: the market already holds our offers, and a new batch
                 # would replace them (capacity_left_kg no longer counts them, so it would offer less)
+                acted.add(rid)
                 log("round_already_sent", round=rid, n=len(state["my_open_offers"]))
                 continue
-            ctx = strategy.Context(rules, info["calendar"], tv, rng, memory, llm, state["seconds_left"] or 999)
+            if left is not None and left > send_at():
+                if rid not in waited:
+                    waited.add(rid)
+                    log("waiting_to_send", round=rid, seconds_left=left, send_at=send_at(),
+                        lots={l["lot_id"]: l["kg_remaining"] for l in state["lots"]})
+                time.sleep(min(5.0, max(0.5, left - send_at() + 0.2)))
+                continue
+            if rid in failed and left is not None and left < RETRY_UNTIL:
+                # ไม่ยอมแพ้: ลองต่อจนรอบปิด (ROUND_CLOSED = ตลาดปฏิเสธเอง ไม่เสียอะไร) ดีกว่าทิ้งทั้งรอบ
+                log("send_late", round=rid, seconds_left=left)
+            acted.add(rid)
+            ctx = strategy.Context(rules, info["calendar"], tv, rng, memory, llm, left or 999)
             try:
                 events, note = strategy.apply_overrides(OVERRIDES)
                 for ev, data in events:
@@ -144,11 +170,13 @@ def play(api: Market, llm: LLM | None, forever: bool) -> None:
                 # and the round_already_sent check above stops a second batch
                 log("send_error", round=rid, error=repr(e))
                 acted.discard(rid)
+                failed.add(rid)
                 time.sleep(2)
                 continue
             memory.record_sent(rid, offers, state, tv, ctx.offer_tv, ctx.offer_ov)
             log("offers_sent", round=rid, source=source, n=len(sent), kg=sum(o["kg"] for o in sent),
-                seconds=round(time.time() - t0, 1), offers=offers, notes=ctx.notes)
+                seconds=round(time.time() - t0, 1), seconds_left=left,
+                lots={l["lot_id"]: l["kg_remaining"] for l in state["lots"]}, offers=offers, notes=ctx.notes)
 
         elif phase == "CLOSED" and game is not None and "closed" not in acted:
             acted.add("closed")
