@@ -225,6 +225,7 @@ k เฉลี่ยที่ขายได้: COMMERCIAL ≈ 0.99–1.01 · I
 | `bd588ea` | `FEST_RESERVE = False` (โค้ดยังอยู่) |
 | #44 | **ตารางขาย** (`SCHEDULE`) ด้านล่าง · `.gitignore` กัน `.env*` ยกเว้น `.env.example` |
 | #44 | **`SCHEDULE = False`** ตามผล A/B ในตลาดจำลองด่าน 3 (ตารางด้านล่าง) · โค้ดยังอยู่ |
+| #44 | **คุมระหว่างแข่ง**: `overrides.json` (อ่านใหม่ทุกรอบ ไม่ต้องรีสตาร์ท) · `SEND_AT` 180 (บันทึกผลทันทีที่รอบเปิด ส่งเมื่อเหลือ ≤ 180 วิ) · `tools/wait_round.py` + `tools/round_report.py` · กติกาใน `PLAYBOOK.md` · `.claude/settings.json` |
 
 ### ตารางขาย (`SCHEDULE`, #44 · **ตอนนี้ปิด** ดูผล A/B ท้ายหัวข้อ)
 
