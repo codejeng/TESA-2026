@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตลาดจำลองด่าน 3</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1f1d1a; --muted:#6b665e; --line:#e4e0d8; --accent:#7a4b23;
+          --ok:#2f7d4f; --bad:#b3402e; --warn:#a86b00; --pill:#efe9df; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161412; --card:#201d1a; --ink:#eee9e2; --muted:#a39b90;
+          --line:#36312b; --accent:#d9a46b; --ok:#6cc08b; --bad:#ef7d68; --warn:#e3b04f; --pill:#2b2622; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, "Noto Sans Thai", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:4px 0 12px; } h2 { font-size:15px; margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+  .stat b { display:block; font-size:20px; } .stat span { color:var(--muted); font-size:12px; }
+  .pill { background:var(--pill); border-radius:99px; padding:3px 10px; font-weight:600; }
+  input { flex:1; min-width:220px; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); font:inherit; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  .tw { overflow-x:auto; } table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; } td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .ACCEPTED { color:var(--ok); } .PARTIAL { color:var(--warn); } .OUTBID, .CANCELLED { color:var(--muted); }
+  .ABOVE_LIMIT, .SPEC_MISMATCH { color:var(--bad); } .muted { color:var(--muted); } .err { color:var(--bad); }
+  code { background:var(--pill); padding:1px 5px; border-radius:4px; }
+  .me td { font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>☕ ตลาดจำลองด่าน 3 <span class="muted" style="font-size:13px">(mock · เครื่องนี้เท่านั้น)</span></h1>
+
+  <section class="card" id="login">
+    <h2>เข้าสู่ตลาดด้วย key ของทีม</h2>
+    <p class="muted">ตลาดจำลองจะรับ key นี้จากนี้ไป แล้วรัน agent ด้วย key เดียวกันได้เลย (<code>TEAM_KEY</code> ใน .env หรือบนบรรทัดคำสั่ง)
+      · key อยู่ในหน่วยความจำของ mock บนเครื่องนี้เท่านั้น ไม่ถูกบันทึกลงไฟล์</p>
+    <div class="row"><input id="key" type="password" placeholder="sk-T23-..." autocomplete="off">
+      <button id="go">เข้าสู่ตลาด</button></div>
+    <p id="loginerr" class="err"></p>
+  </section>
+
+  <div id="dash" hidden>
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="row"><span class="pill" id="phase">-</span><b id="round">-</b><span class="muted" id="cal"></span></div>
+        <div class="row"><b id="left" style="font-size:22px">-</b><button class="ghost" id="start" hidden>เริ่มเกมเลย</button>
+          <button class="ghost" id="logout">ออก</button></div>
+      </div>
+      <p class="muted" id="hint" style="margin:8px 0 0"></p>
+    </section>
+    <section class="card"><div class="grid" id="stand"></div></section>
+    <section class="card"><h2>ล็อตของเรา</h2><div class="tw"><table id="lots"></table></div></section>
+    <section class="card"><h2>RFQ รอบนี้</h2><div class="tw"><table id="rfqs"></table></div></section>
+    <section class="card"><h2>ข้อเสนอที่เปิดอยู่</h2><div class="tw"><table id="open"></table></div></section>
+    <section class="card"><h2>ผลรอบล่าสุด <span class="muted" id="lastid"></span></h2><div class="tw"><table id="last"></table></div>
+      <h2 style="margin-top:12px">ตลาด</h2><div class="tw"><table id="summ"></table></div></section>
+    <section class="card"><h2>ประวัติต่อรอบ</h2><div class="tw"><table id="hist"></table></div></section>
+    <section class="card" id="boardc" hidden><h2>อันดับ (หลังปิดตลาด)</h2><div class="tw"><table id="board"></table></div></section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let KEY = null, timer = null;
+try { KEY = sessionStorage.getItem("mockkey"); } catch (e) {}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (x, d=2) => x == null ? "-" : Number(x).toLocaleString("th-TH", {minimumFractionDigits:d, maximumFractionDigits:d});
+function table(el, cols, rows, rowClass) {
+  if (!rows || !rows.length) { el.innerHTML = '<tr><td class="muted">—</td></tr>'; return; }
+  el.innerHTML = "<tr>" + cols.map(c => `<th>${c[0]}</th>`).join("") + "</tr>" + rows.map(r =>
+    `<tr class="${rowClass ? rowClass(r) : ""}">` + cols.map(c => { const v = c[1](r);
+      return `<td class="${c[2] || ""}">${v}</td>`; }).join("") + "</tr>").join("");
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {"Authorization": "Bearer " + KEY, "Content-Type": "application/json"}});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.error && j.error.message) || r.status);
+  return j;
+}
+async function login() {
+  const k = $("key").value.trim();
+  if (!k) return;
+  const r = await fetch("/mock/login", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key:k})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { $("loginerr").textContent = (j.error && j.error.message) || "เข้าไม่ได้"; return; }
+  KEY = k; try { sessionStorage.setItem("mockkey", k); } catch (e) {}
+  $("key").value = ""; show();
+}
+function show() {
+  $("login").hidden = !!KEY; $("dash").hidden = !KEY;
+  clearInterval(timer);
+  if (KEY) { refresh(); timer = setInterval(refresh, 1000); }
+}
+async function refresh() {
+  let v;
+  try { v = await api("/mock/view"); } catch (e) {
+    if (String(e.message).includes("key")) { KEY = null; try { sessionStorage.removeItem("mockkey"); } catch (_) {} show();
+      $("loginerr").textContent = "key ไม่ตรง (ตลาดเริ่มเกมใหม่หรือรีสตาร์ท) เข้าใหม่อีกครั้ง"; }
+    return;
+  }
+  const s = v.state, rd = s.round;
+  $("phase").textContent = s.phase;
+  $("round").textContent = rd ? `${rd.round_id} (${rd.kind === "real" ? "รอบจริง" : "ซ้อม"} ${rd.number}/${rd.of})` : "";
+  $("cal").textContent = rd && rd.calendar ? "· " + rd.calendar : "";
+  $("left").textContent = s.seconds_left == null ? "" : Math.ceil(s.seconds_left) + " วิ";
+  $("start").hidden = s.phase !== "WAITING";
+  $("hint").innerHTML = s.phase === "WAITING"
+    ? `รอเริ่ม: เกมจะเริ่มเมื่อ agent ส่งคำขอแรก (หรือกด "เริ่มเกมเลย") · รัน <code>.venv/bin/python main.py</code> โดยให้ <code>MARKET_URL=http://127.0.0.1:${location.port}</code>`
+    : `scenario <b>${esc(v.scenario)}</b> · คำขอของทีม ${v.requests} ครั้ง · สูงสุด ${v.max_rps}/วินาที · 429: ${v.rate_limited_429}`
+      + (v.appraisal_submitted ? " · ส่งประเมินแล้ว" : "");
+  const st = s.standings;
+  $("stand").innerHTML = [["รายได้ (บาท)", num(st.revenue_thb, 0)], ["ขายแล้ว (กก.)", num(st.kg_sold, 0)],
+    ["เหลือ (กก.)", num(st.kg_remaining, 0) + " / " + num(st.kg_total, 0)], ["ราคาเฉลี่ย", num(st.avg_price_per_kg)],
+    ["เพดานต่อรอบ", num(s.round_capacity_kg, 0) + " กก."], ["เหลือเสนอได้", num(s.capacity_left_kg, 0) + " กก."]]
+    .map(([a, b]) => `<div class="stat"><span>${a}</span><b>${b}</b></div>`).join("");
+  table($("lots"), [["ล็อต", r => esc(r.lot_id)], ["เหลือ/ทั้งหมด", r => `${r.kg_remaining}/${r.kg_total}`, "n"],
+    ["ว่างเสนอ", r => r.kg_available, "n"], ["เสีย %", r => r.sample.defect_pct, "n"], ["ชื้น %", r => r.sample.moisture_pct, "n"],
+    ["ขนาด", r => r.sample.screen, "n"], ["ที่มา", r => esc(r.origin + " · " + r.process)]], s.lots);
+  const spec = p => `เสีย≤${p.max_defect_pct} ชื้น≤${p.max_moisture_pct}` + (p.min_screen ? ` ขนาด≥${p.min_screen}` : "");
+  table($("rfqs"), [["RFQ", r => esc(r.rfq_id)], ["ผู้ซื้อ", r => esc(r.buyer)], ["ประเภท", r => r.buyer_type],
+    ["กระสอบ", r => r.bags, "n"], ["สเปก", r => spec(r.spec)]], s.rfqs);
+  const offerCols = [["RFQ", r => esc(r.rfq_id)], ["ล็อต", r => esc(r.lot_id)], ["กก.", r => r.kg, "n"],
+    ["บาท/กก.", r => num(r.price_per_kg), "n"], ["สถานะ", r => `<span class="${r.status}">${r.status}</span>`],
+    ["ขายได้", r => r.filled_kg, "n"]];
+  table($("open"), offerCols, s.my_open_offers);
+  const lr = s.last_results;
+  $("lastid").textContent = lr ? lr.round_id : "";
+  table($("last"), offerCols, lr && lr.my_offers);
+  table($("summ"), [["RFQ", r => esc(r.rfq_id)], ["ผู้ซื้อ", r => esc(r.buyer)], ["ต้องการ", r => r.wanted_kg, "n"],
+    ["ซื้อได้", r => r.bought_kg, "n"], ["ซอง", r => r.offers, "n"], ["ต่ำสุด", r => num(r.price_min), "n"],
+    ["สูงสุด", r => num(r.price_max), "n"], ["เฉลี่ย", r => num(r.price_avg), "n"]], lr && lr.market_summary);
+  table($("hist"), [["รอบ", r => r.round], ["ซอง", r => r.offers.length, "n"],
+    ["ผล", r => r.offers.map(o => `<span class="${o.status}">${o.status[0]}</span>`).join(" ")],
+    ["รายได้สะสม", r => num(r.revenue, 0), "n"], ["เหลือ (กก.)", r => r.kg_remaining, "n"],
+    ["Specialty ซอง/RFQ", r => r.specialty_offers_per_sold_rfq ?? "-", "n"]], (v.history || []).slice().reverse());
+  $("boardc").hidden = !v.leaderboard;
+  if (v.leaderboard) table($("board"), [["#", r => r.rank, "n"], ["ทีม", r => r.team_id], ["แบบ", r => r.kind],
+    ["PR", r => num(r.pr, 4), "n"], ["MAPE", r => r.mape == null ? "-" : num(100 * r.mape, 1) + "%", "n"],
+    ["คะแนน PR", r => num(r.pr_score), "n"], ["ประเมิน", r => num(r.appraisal_score), "n"], ["รวม", r => num(r.total), "n"]],
+    v.leaderboard, r => r.team_id === "T23" ? "me" : "");
+}
+$("go").onclick = login;
+$("key").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+$("logout").onclick = () => { KEY = null; try { sessionStorage.removeItem("mockkey"); } catch (e) {} show(); };
+$("start").onclick = () => api("/mock/start", {method:"POST"}).then(refresh).catch(() => {});
+show();
+</script>
+</body>
+</html>

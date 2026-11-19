@@ -26,6 +26,7 @@ from appraisal import grade, true_value  # noqa: E402
 
 BAG = 60
 OUR = "T23"
+TRADE_HTML = Path(__file__).resolve().parent / "mock_trade.html"
 RULES = json.loads((HERE / "data" / "sandbox-20261118" / "calendar-1021.json").read_text(encoding="utf-8"))["rules"]
 
 # stage-3 calendar from the day-3 slides
@@ -691,10 +692,10 @@ def make_handler(box: dict):
         def log_message(self, *a):
             pass
 
-        def send(self, status, body, headers=None):
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        def send(self, status, body, headers=None, ctype="application/json; charset=utf-8"):
+            data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
@@ -713,10 +714,35 @@ def make_handler(box: dict):
             if path == "/mock/stats":
                 with m.lock:
                     return self.send(200, m.stats())
+            if path in ("/", "/trade"):
+                return self.send(200, TRADE_HTML.read_bytes(), ctype="text/html; charset=utf-8")
+            if path == "/mock/login" and method == "POST":
+                # the key typed in /trade becomes a valid key for our team (memory only, never logged or written)
+                try:
+                    k = (json.loads(raw) if raw else {}).get("key")
+                except (json.JSONDecodeError, AttributeError):
+                    k = None
+                if not isinstance(k, str) or not (6 <= len(k) <= 200) or any(c.isspace() for c in k):
+                    return self.send(*err(400, "INVALID_FIELD", "key must be 6–200 characters without spaces", field="key"))
+                box["keys"].add(k)
+                return self.send(200, {"ok": True, "team_id": OUR})
             auth = self.headers.get("Authorization", "")
-            if auth != f"Bearer {m.a.team_key}":
+            if not any(auth == f"Bearer {k}" for k in box["keys"]):
                 return self.send(*err(401, "UNAUTHORIZED", "missing or wrong key",
-                                      hint="send Authorization: Bearer <team key> for this market"))
+                                      hint="send Authorization: Bearer <team key> for this market "
+                                           "(or enter your key at /trade first)"))
+            if path == "/mock/view":          # for the /trade page: not rate limited, does not start the game
+                m.tick()
+                with m.lock:
+                    st = m.stats()
+                    return self.send(200, {"state": m.state(m.teams[OUR]), "scenario": st["scenario"],
+                                           "requests": st["requests"], "max_rps": st["max_rps"],
+                                           "rate_limited_429": st["rate_limited_429"], "history": st["history"],
+                                           "appraisal_submitted": m.teams[OUR].appraisal is not None,
+                                           "leaderboard": st.get("leaderboard")})
+            if path == "/mock/start" and method == "POST":
+                m.start()
+                return self.send(200, {"ok": True})
             m.start()
             with m.lock:
                 ok = m.note_request()
@@ -773,7 +799,7 @@ def main():
     ap.add_argument("--loop", action="store_true", help="after CLOSED + linger start a new game (seed + 1)")
     a = ap.parse_args()
     m = Market(a)
-    box = {"m": m}
+    box = {"m": m, "keys": {a.team_key}}
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(box))
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()

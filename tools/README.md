@@ -20,6 +20,10 @@ tools/run_mock.sh nohoard --restart       # kill the agent after it sends R7 (re
 tools/run_mock.sh hoard -- --open-s 7 --clear-s 2 --setup-s 3 --appraisal-s 6    # faster game (~2.5 min)
 ```
 
+- **Web page `/trade`** (e.g. http://127.0.0.1:8200/trade): enter your team key, the mock then accepts that key for
+  our team (memory only, never written), so `main.py` runs with `.env` as is (only `MARKET_URL` must point at the mock).
+  The page shows phase, countdown, lots, RFQs, open offers, last results, per-round history and the final leaderboard;
+  its polling (`/mock/view`) is not counted in the rate limit and does not start the game.
 - Standing sandbox for manual tests: `.venv/bin/python tools/mock_market.py --scenario hoard --port 8200 --wait-start --loop`
   (`--wait-start`: WAITING until the first request with the key, like pressing start · `--loop`: new game after each close)
   then run the agent with `MARKET_URL=http://127.0.0.1:8200 TEAM_KEY=sk-T23-mock USE_LLM=0` (`--forever` for several games).
