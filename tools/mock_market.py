@@ -168,6 +168,10 @@ class Market:
         self.history = []                # our per-round snapshot
         self.batches = defaultdict(int)  # round -> our accepted batch/single offer posts
         self.appraisal_phase = None
+        # for /display: stage leaderboard (frozen after rules.scoring.leaderboard_freeze_after_round) and market stats
+        self.board, self.board_round = [], 0
+        self.round_stats = []            # real rounds: {number, wanted_kg, bought_kg, by_type}
+        self.cum = {t: {"wanted_kg": 0, "bought_kg": 0, "revenue": 0.0} for t in CEIL}
         self.final = None
         self.events = []
 
@@ -433,6 +437,8 @@ class Market:
             if tid != OUR:
                 self._bot_learn(t, res["my_offers"])
         self.last_round = rid
+        if real:
+            self._display_after_clear(rd[2], summary)
         us = self.teams[OUR]
         self.history.append({
             "round": rid, "kind": kind,
@@ -447,6 +453,68 @@ class Market:
         self.offers = {}
 
     # ---------------- scoring ----------------
+    def _pr_now(self, t: Team) -> float:
+        total = sum(l["tv"] * l["kg_total"] for l in t.lots)
+        left = sum(l["tv"] * l["kg_remaining"] for l in t.lots)
+        return (t.revenue + self.rules["salvage_ratio"] * left) / total
+
+    def _display_after_clear(self, n: int, summary: list):
+        rev = defaultdict(float)
+        for o in self.offers.values():
+            if o["filled_kg"]:
+                rev[o["rfq_id"]] += o["filled_kg"] * o["price_per_kg"]
+        by = {}
+        for typ in CEIL:
+            rows = [x for x in summary if x["buyer_type"] == typ]
+            w, b = sum(x["wanted_kg"] for x in rows), sum(x["bought_kg"] for x in rows)
+            r = sum(rev[x["rfq_id"]] for x in rows)
+            by[typ] = {"wanted_kg": w, "bought_kg": b, "avg_price": round(r / b, 2) if b else None}
+            self.cum[typ]["wanted_kg"] += w
+            self.cum[typ]["bought_kg"] += b
+            self.cum[typ]["revenue"] += r
+        self.round_stats.append({"number": n, "wanted_kg": sum(x["wanted_kg"] for x in summary),
+                                 "bought_kg": sum(x["bought_kg"] for x in summary), "by_type": by})
+        if n <= self.rules["scoring"].get("leaderboard_freeze_after_round", 99):
+            prev = {r["team_id"]: r["rank"] for r in self.board}
+            order = sorted(self.teams.values(), key=lambda t: -self._pr_now(t))
+            self.board = [{"rank": i, "team_id": t.id, "name": t.name, "move": prev.get(t.id, i) - i}
+                          for i, t in enumerate(order, 1)]
+            self.board_round = n
+
+    def display_data(self) -> dict:
+        """GET /display/data: the fields the organizers' /display page reads (no numbers per team while live)"""
+        freeze = self.rules["scoring"].get("leaderboard_freeze_after_round", 99)
+        rd = self.round
+        open_ = self.phase == "ROUND_OPEN"
+        W = []
+        for n in range(1, self.a.rounds + 1):
+            label, w = round_label(n, self.calendar)
+            W.append({"round": n, "label": label, "demand_weight": w, "festival": "เทศกาล" in label})
+        out = {
+            "server_time": time.time(), "phase": self.phase, "paused": False, "paused_seconds_left": None,
+            "phase_ends_at": self.ends_at,
+            "round": {"round_id": rd[0], "kind": rd[1], "number": rd[2]} if rd else None,
+            "rounds_total": self.a.rounds, "teams_total": len(self.teams),
+            "leaderboard": {"has_ranking": bool(self.board), "frozen": self.board_round >= freeze and (
+                self.phase == "CLOSED" or (rd and rd[1] == "real" and rd[2] > freeze)),
+                "freeze_after_round": freeze,
+                "ranking": [{"rank": r["rank"], "name": self.teams[r["team_id"]].name, "move": r["move"]} for r in self.board]},
+            "calendar": W, "rounds": self.round_stats,
+            "by_type": {t: {"wanted_kg": c["wanted_kg"], "bought_kg": c["bought_kg"],
+                            "avg_price": round(c["revenue"] / c["bought_kg"], 2) if c["bought_kg"] else None}
+                        for t, c in self.cum.items()},
+            "appraisals_submitted": sum(1 for t in self.teams.values() if t.appraisal),
+            "rfqs_open": len(self.rfqs) if open_ else 0,
+            "kg_wanted_now": sum(r["kg"] for r in self.rfqs) if open_ else 0,
+            "teams_with_offers": len({o["team"] for o in self.offers.values() if o["status"] == "OPEN"}) if open_ else 0,
+            "final": None,
+        }
+        if self.phase == "CLOSED":
+            out["final"] = [{"rank": r["rank"], "name": self.teams[r["team_id"]].name, "pr": r["pr"],
+                             "pr_score": r["pr_score"], "appraisal_score": r["appraisal_score"], "total": r["total"]}
+                            for r in self.scores()]
+        return out
+
     def scores(self):
         rows = []
         for t in self.teams.values():
@@ -747,6 +815,12 @@ def make_handler(box: dict):
                     return self.send(200, f.read_bytes(), ctype="font/ttf")
             if path.startswith("/trade/"):
                 return self.send(*err(404, "UNKNOWN_ENDPOINT", f"no file {path}"))
+            if path in ("/display", "/display/"):        # the organizers' stage display (?mode=reveal after close)
+                return self.send(200, (TRADE_DIR / "display.html").read_bytes(), ctype="text/html; charset=utf-8")
+            if path == "/display/data":
+                m.tick()
+                with m.lock:
+                    return self.send(200, m.display_data())
             if path == "/mock/ui":                        # our own dashboard (history, leaderboard)
                 return self.send(200, TRADE_HTML.read_bytes(), ctype="text/html; charset=utf-8")
             if path == "/mock/login" and method == "POST":

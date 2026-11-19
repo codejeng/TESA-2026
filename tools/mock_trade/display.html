@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coffee Market Live</title>
+<style>
+:root{--bg:#14110f;--panel:#201b17;--line:#3a312a;--ink:#f4ede4;--dim:#a8998a;--accent:#e0a458;
+--up:#6cc58a;--down:#e46f5f;--spec:#d58ad8;--comm:#5fa8e4;--inst:#e0a458;--fest:#9b4dca}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+font-family:"Noto Sans Thai","Leelawadee UI","Tahoma",sans-serif;font-size:clamp(12px,1.05vw,22px)}
+.app{display:grid;grid-template-rows:auto 1fr;height:100vh;padding:1.2em 1.6em;gap:1em}
+header{display:flex;align-items:center;justify-content:space-between;gap:1em}
+h1{margin:0;font-size:1.7em;font-weight:700;letter-spacing:.01em}
+h1 small{display:block;font-size:.5em;color:var(--dim);font-weight:400}
+.clock{text-align:right}
+.phase{font-size:1.25em;color:var(--accent);font-weight:700}
+.timer{font-size:3.6em;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.paused{color:var(--down)}
+main{display:grid;grid-template-columns:1.25fr 1fr;gap:1.2em;min-height:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1em 1.2em;min-height:0}
+.panel h2{margin:0 0 .6em;font-size:1em;color:var(--dim);font-weight:600;display:flex;justify-content:space-between}
+.board{display:grid;column-gap:1.4em;row-gap:.15em;grid-auto-flow:column}
+main.wide{grid-template-columns:1.7fr 1fr}
+.board.c3 .row{font-size:.98em}
+.board.c1 .row,.board.c2 .row{font-size:.98em;padding:.08em .3em}   /* 20 rows per column: fit 768px-high screens */
+.row{display:grid;grid-template-columns:2.2em 1fr 2.4em;align-items:center;padding:.18em .3em;border-radius:6px;
+font-size:1.05em;transition:background .6s}
+.row:nth-child(-n+3){background:#2c241d}
+.rk{color:var(--dim);font-variant-numeric:tabular-nums;text-align:right;padding-right:.5em}
+.nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv{text-align:right;font-size:.85em;font-variant-numeric:tabular-nums}
+.mv.u{color:var(--up)}.mv.d{color:var(--down)}
+.side{display:grid;grid-template-rows:auto auto auto auto;gap:1em;min-height:0;align-content:start}
+.cal{display:grid;gap:.25em}
+.cell{border:1px solid var(--line);border-radius:6px;text-align:center;padding:.35em 0;font-size:.9em;color:var(--dim)}
+.cell{font-weight:600}
+.cell.f{background:var(--fest);border:2px solid #e9c2f5;color:#fff}
+.cell.done{opacity:.6}
+.cell.now{outline:4px solid #fff;outline-offset:2px;color:#fff;opacity:1}
+.cell i{display:flex;align-items:flex-end;height:2em;margin:.3em .45em 0;border-radius:3px;background:#3a312a}
+.cell i b{display:block;width:100%;border-radius:3px;background:var(--accent)}
+.cell i b.low{background:var(--down)}
+.legend .sw{display:inline-block;width:1em;height:1em;border-radius:3px;vertical-align:-.15em;margin:0 .25em 0 .8em}
+.legend .sw:first-child{margin-left:0}
+.legend{font-size:.8em;color:var(--dim);margin-top:.5em}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.8em}
+.stat b{display:block;font-size:2em;font-variant-numeric:tabular-nums}
+.stat span{color:var(--dim);font-size:.85em}
+.types{display:grid;grid-template-columns:repeat(3,1fr);gap:.8em}
+.type{border-left:6px solid;padding-left:.7em}
+.type .p{font-size:1.6em;font-weight:700;font-variant-numeric:tabular-nums}
+.type .s{color:var(--dim);font-size:.85em}
+svg text{fill:var(--dim);font-size:11px}
+.note{color:var(--dim);font-size:.85em;margin-top:.4em}
+.banner{background:#3a2a20;color:var(--accent);border-radius:8px;padding:.3em .7em;font-size:.85em}
+/* reveal */
+.reveal{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:1em;padding:2em}
+.reveal table{border-collapse:collapse;font-size:1.25em;min-width:70%}
+.reveal td,.reveal th{padding:.35em .9em;text-align:right;font-variant-numeric:tabular-nums}
+.reveal th{color:var(--dim);font-weight:500;border-bottom:1px solid var(--line)}
+.reveal td.n{text-align:left}
+.reveal tr.new{animation:pop .7s ease-out}
+.reveal tr.top td{font-size:1.3em;color:var(--accent);font-weight:700}
+@keyframes pop{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.hint{color:var(--dim);font-size:.9em}
+.wait{font-size:2em;color:var(--dim);text-align:center}
+</style></head>
+<body><div id="root"></div>
+<script>
+const MODE = new URLSearchParams(location.search).get('mode') || 'live';
+const PHASE = {WAITING:'รอเริ่มตลาด',SETUP:'เตรียมตัว',APPRAISAL:'ประเมินมูลค่าล็อต (Appraisal)',
+  ROUND_OPEN:'เปิดรับ Offer',ROUND_CLEARING:'กำลังเคลียร์ตลาด',CLOSED:'ปิดตลาดแล้ว'};
+const TYPES = [['SPECIALTY','Specialty','--spec'],['COMMERCIAL','Commercial','--comm'],['INSTANT','Instant','--inst']];
+let data = null, offset = 0, revealed = parseInt(location.hash.slice(1)) || 0, popped = -1;   // #N survives a refresh on stage
+const $ = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n, d=0) => n == null ? '–' : Number(n).toLocaleString('th-TH', {minimumFractionDigits:d, maximumFractionDigits:d});
+
+async function poll() {
+  try {
+    const r = await fetch('/display/data', {cache:'no-store'});
+    if (r.ok) { data = await r.json(); offset = data.server_time - Date.now()/1000; render(); }
+  } catch (e) {}
+}
+
+function secondsLeft() {
+  if (!data) return null;
+  if (data.paused) return data.paused_seconds_left;
+  if (data.phase_ends_at == null) return null;
+  return Math.max(0, data.phase_ends_at - (Date.now()/1000 + offset));
+}
+function mmss(s) { if (s == null) return ''; s = Math.ceil(s); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
+
+function phaseText(d) {
+  let t = PHASE[d.phase] || d.phase;
+  if (d.round && (d.phase === 'ROUND_OPEN' || d.phase === 'ROUND_CLEARING'))
+    t = (d.round.kind === 'practice' ? `รอบซ้อม ${d.round.round_id} · ` : `รอบ ${d.round.number}/${d.rounds_total} · `) + t;
+  return t;
+}
+
+// up to 20 teams per column: 40 teams → 2 columns, 56 teams → 3 columns (19, 19, 18)
+const boardCols = n => Math.max(1, Math.ceil(n / 20));
+
+function board(d) {
+  const lb = d.leaderboard;
+  if (!lb.has_ranking && !lb.frozen) {
+    return `<div class="note">อันดับจะแสดงหลังจบรอบที่ 1 — ทีมทั้งหมด ${d.teams_total} ทีม</div>`;
+  }
+  const n = lb.ranking.length, cols = boardCols(n);
+  return `<div class="board c${cols}" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${Math.ceil(n / cols)},auto)">` + lb.ranking.map(r => {
+    const mv = r.move > 0 ? `<span class="mv u">▲${r.move}</span>` : r.move < 0 ? `<span class="mv d">▼${-r.move}</span>` : '<span class="mv"></span>';
+    return `<div class="row"><span class="rk">${r.rank}</span><span class="nm">${esc(r.name)}</span>${mv}</div>`;
+  }).join('') + '</div>';
+}
+
+function calendar(d) {
+  const now = d.round && d.round.kind === 'real' ? d.round.number : 0;
+  const cells = d.calendar.map(c => {
+    const cls = ['cell', c.festival ? 'f' : '', c.round < now || (c.round === now && d.phase === 'CLOSED') ? 'done' : '',
+                 c.round === now && d.phase !== 'CLOSED' ? 'now' : ''].join(' ');
+    return `<div class="${cls}" title="${esc(c.label)}">${c.round}<i><b class="${c.demand_weight < 1 ? 'low' : ''}" style="height:${Math.round(100 * Math.min(1, c.demand_weight))}%"></b></i></div>`;
+  }).join('');
+  return `<div class="cal" style="grid-template-columns:repeat(${d.calendar.length},1fr)">${cells}</div>
+    <div class="legend"><span class="sw" style="background:var(--fest)"></span>เทศกาลกาแฟ (Specialty ต้องการมาก)<span class="sw" style="background:var(--accent)"></span>ความต้องการปกติ<span class="sw" style="background:var(--down)"></span>ความต้องการลดลง (แท่งเตี้ย = น้อย)</div>`;
+}
+
+function chart(d) {
+  const W = 520, H = 170, pad = 22, n = d.rounds_total;
+  const max = Math.max(1, ...d.rounds.map(r => r.wanted_kg));
+  const bw = (W - pad) / n;
+  let bars = '';
+  for (const r of d.rounds) {
+    const x = pad + (r.number - 1) * bw;
+    const hw = (H - 24) * r.wanted_kg / max, hb = (H - 24) * r.bought_kg / max;
+    bars += `<rect x="${x+2}" y="${H-20-hw}" width="${bw-4}" height="${hw}" fill="#3a312a"/>`
+          + `<rect x="${x+2}" y="${H-20-hb}" width="${bw-4}" height="${hb}" fill="var(--accent)"/>`;
+  }
+  let labels = '';
+  for (let i = 1; i <= n; i++) labels += `<text x="${pad + (i-0.5)*bw}" y="${H-5}" text-anchor="middle">${i}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:min(140px,12vh)" preserveAspectRatio="none">${bars}${labels}</svg>
+    <div class="legend">กก. ที่ผู้ซื้อต้องการ (เทา) และซื้อได้จริง (ส้ม) ต่อรอบ</div>`;
+}
+
+function types(d) {
+  return '<div class="types">' + TYPES.map(([k, label, c]) => {
+    const t = d.by_type[k] || {};
+    const last = d.rounds.length ? (d.rounds[d.rounds.length-1].by_type[k] || {}) : {};
+    const fill = t.wanted_kg ? Math.round(100 * t.bought_kg / t.wanted_kg) : null;
+    return `<div class="type" style="border-color:var(${c})"><div>${label}</div>
+      <div class="p">${fmt(t.avg_price, 1)} <small style="font-size:.5em;color:var(--dim)">บ./กก.</small></div>
+      <div class="s">รอบล่าสุด ${fmt(last.avg_price, 1)}</div>
+      <div class="s">ซื้อได้ ${fill == null ? '–' : fill + '%'} ของที่ต้องการ</div></div>`;
+  }).join('') + '</div>';
+}
+
+function stats(d) {
+  if (d.phase === 'APPRAISAL')
+    return `<div class="stats"><div class="stat"><b>${d.appraisals_submitted}/${d.teams_total}</b><span>ทีมส่ง Appraisal แล้ว</span></div></div>`;
+  return `<div class="stats">
+    <div class="stat"><b>${d.rfqs_open}</b><span>RFQ เปิดอยู่</span></div>
+    <div class="stat"><b>${fmt(d.kg_wanted_now / 60)}</b><span>กระสอบที่ผู้ซื้อต้องการรอบนี้</span></div>
+    <div class="stat"><b>${d.teams_with_offers}/${d.teams_total}</b><span>ทีมส่ง Offer แล้ว</span></div></div>`;
+}
+
+function renderLive(d) {
+  const lb = d.leaderboard;
+  const frozen = lb.frozen ? `<span class="banner">แช่แข็งหลังรอบ ${lb.freeze_after_round} — ผลจริงประกาศบนเวที</span>` : '';
+  const left = secondsLeft();
+  document.getElementById('root').replaceChildren($(`<div class="app">
+    <header><h1>ตลาดเมล็ดกาแฟโรบัสตาสำหรับ AI Agent<small>อันดับตาม Price Realization · ไม่แสดงตัวเลข</small></h1>
+      <div class="clock"><div class="phase">${esc(phaseText(d))}${d.paused ? ' · หยุดชั่วคราว' : ''}</div>
+      <div class="timer ${d.paused ? 'paused' : ''}" id="timer">${mmss(left)}</div></div></header>
+    <main class="${boardCols(d.teams_total) > 2 ? 'wide' : ''}">
+      <section class="panel"><h2><span>อันดับ</span>${frozen}</h2>${board(d)}</section>
+      <section class="side">
+        <div class="panel"><h2><span>Market Calendar</span></h2>${calendar(d)}</div>
+        <div class="panel"><h2><span>ตอนนี้</span></h2>${stats(d)}</div>
+        <div class="panel"><h2><span>ราคาเฉลี่ยที่ผู้ซื้อจ่าย (ทั้งตลาด)</span></h2>${types(d)}</div>
+        <div class="panel" style="min-height:0"><h2><span>ปริมาณซื้อขาย</span></h2>${chart(d)}</div>
+      </section>
+    </main></div>`));
+}
+
+function renderReveal(d) {
+  const root = document.getElementById('root');
+  if (!d.final) {
+    root.replaceChildren($(`<div class="reveal"><div class="wait">ผลคะแนนยังไม่เปิดเผย<br><span class="hint">admin กด "ปล่อยผล" หลังตรวจโค้ด 5 อันดับแรก</span></div></div>`));
+    return;
+  }
+  const rows = [...d.final].sort((a, b) => b.rank - a.rank);   // last place first
+  revealed = Math.min(revealed, rows.length);
+  const shown = rows.slice(0, revealed).reverse().slice(0, 15);   // newest on top; older rows scroll off
+  const pop = popped !== revealed; popped = revealed;
+  const body = shown.map((r, i) => `<tr class="${r.rank <= 3 ? 'top' : ''} ${i === 0 && pop ? 'new' : ''}">
+    <td>${r.rank}</td><td class="n">${esc(r.name)}</td><td>${fmt(r.pr, 3)}</td>
+    <td>${fmt(r.pr_score, 1)}</td><td>${fmt(r.appraisal_score, 1)}</td><td><b>${fmt(r.total, 1)}</b></td></tr>`).join('');
+  root.replaceChildren($(`<div class="reveal"><h1>ผลการแข่งขันตลาดเมล็ดกาแฟ</h1>
+    <table><thead><tr><th>อันดับ</th><th class="n" style="text-align:left">ทีม</th><th>PR</th><th>PR (80)</th>
+    <th>Appraisal (20)</th><th>รวม (100)</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="hint">${revealed < rows.length ? `กด Space / → เพื่อเปิดอันดับถัดไป (เหลือ ${rows.length - revealed}) · ← ย้อน · A เปิดทั้งหมด` : 'เปิดครบทุกอันดับแล้ว'}</div></div>`));
+}
+
+function render() { if (data) (MODE === 'reveal' ? renderReveal : renderLive)(data); }
+
+document.addEventListener('keydown', (e) => {
+  if (MODE !== 'reveal' || !data || !data.final) return;
+  const n = data.final.length;
+  if (e.key === ' ' || e.key === 'ArrowRight') revealed = Math.min(n, revealed + 1);
+  else if (e.key === 'ArrowLeft') revealed = Math.max(0, revealed - 1);
+  else if (e.key.toLowerCase() === 'a') revealed = n;
+  else return;
+  e.preventDefault(); history.replaceState(null, '', '#' + revealed); render();
+});
+setInterval(() => { const t = document.getElementById('timer'); if (t) t.textContent = mmss(secondsLeft()); }, 250);
+poll(); setInterval(poll, MODE === 'reveal' ? 5000 : 1000);
+</script></body></html>

@@ -31,6 +31,10 @@ tools/run_mock.sh hoard -- --open-s 7 --clear-s 2 --setup-s 3 --appraisal-s 6   
   - Page requests (`X-Client: trade-page`) share the team's 5/s budget as on the real market, but are not counted in
     the agent's request stats and never start a `--wait-start` game.
   - `/mock/ui`: our own extra dashboard (history per round, leaderboard).
+- **`/display` = the organizers' stage display** (`tools/mock_trade/display.html`; `?mode=reveal` after close: Space/→
+  reveals the final ranking from last place). `/display/data` is built from the fields that page reads (the real one is
+  admin-only): live ranking by PR without numbers, ▲▼ moves, frozen after `leaderboard_freeze_after_round` (12),
+  15-round calendar with festival / demand bars, average price per buyer type, wanted vs bought per round.
 - Standing stage-3 sandbox: `.venv/bin/python tools/mock_market.py --scenario hoard --port 8200 --mode sandbox --any-key --wait-start --loop`
   then open http://127.0.0.1:8200/trade and run the agent with `MARKET_URL=http://127.0.0.1:8200`.
 - Default timing ≈ 8 min per game: setup 10 s, appraisal 20 s, 2 practice + 15 real rounds of 20 s open + 5 s clearing
