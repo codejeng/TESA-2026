@@ -70,7 +70,7 @@ wait_for() {     # wait_for <python expr> : poll until it prints True
   done
 }
 
-echo "scenario $SC · seed $SEED · schedule $([ -n "$SCHED_OFF" ] && echo off || echo on) · faults ${FAULTS:-0} · restart ${RESTART:-0} · $DIR"
+echo "scenario $SC · seed $SEED · SCHEDULE=$(grep -oP "^SCHEDULE = \K\w+" "$DIR/agent/strategy.py") · faults ${FAULTS:-0} · restart ${RESTART:-0} · $DIR"
 start_agent
 if [ -n "$RESTART" ]; then
   wait_for "s['round']=='R7' and s['phase']=='ROUND_OPEN' and s['our_open_offers']>0"

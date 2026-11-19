@@ -9,6 +9,20 @@
 | `mock_market.py` | **local stage-3 mock market** (stdlib only) for running the real `main.py` end to end |
 | `run_mock.sh` | copy the agent to `/tmp`, run it against the mock, then `check_mock_run.py` |
 | `check_mock_run.py` | pass/fail checks for one mock run (task #44) |
+| `round_report.py` | in-game report (≤ 60 lines) from local files + `/display/data` (no key): offers, k per buyer, market, overrides, PLAYBOOK signals |
+| `wait_round.py` | wait for a new round result / market close / timeout, then print `round_report` (see `PLAYBOOK.md`) |
+
+## In-game control (#44)
+
+```bash
+.venv/bin/python tools/wait_round.py --timeout 420 --display http://HOST:PORT --team See-It2026
+.venv/bin/python tools/round_report.py --dir /tmp/t23-mock-hoard-ov/agent --display http://127.0.0.1:8320
+```
+
+- `main.py` records the last round's results when a round opens, then waits until `seconds_left <= SEND_AT`
+  (env, default 180, min 30) before it decides, so there is time to edit `overrides.json` (rules in `PLAYBOOK.md`).
+- Neither tool calls the market API with a key; the leaderboard comes from `<url>/display/data` at most every 30 s
+  (cache `logs/.display_cache.json`) and is skipped on any error.
 
 ## Mock market (stage 3)
 
