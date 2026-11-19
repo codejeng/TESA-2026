@@ -283,6 +283,23 @@ def test_lot_share_gives_instant_only_lot_its_share():
         S.LOT_SHARE = True
 
 
+
+def test_lot_share_respects_flow_gate_and_list_rounds():
+    """share ไม่พาล็อต Specialty ไป Commercial ตอน Specialty เต็ม ถ้า flow gate ยังไม่ให้ไหล"""
+    lot = {"lot_id": "P", "kg_total": 540, "kg_remaining": 540, "kg_available": 540,
+           "sample": {"defect_pct": 0.5, "moisture_pct": 11.0, "screen": 18}}
+    rfqs = [{"rfq_id": "S1", "buyer": "s1", "buyer_type": "SPECIALTY", "kg": 60, "bags": 1, "spec": SPECIALTY},
+            {"rfq_id": "C1", "buyer": "c1", "buyer_type": "COMMERCIAL", "kg": 600, "bags": 10, "spec": COMMERCIAL}]
+    state = {"round": {"round_id": "R2", "kind": "real", "number": 2, "of": 15, "calendar": "ปกติ"},
+             "lots": [lot], "rfqs": rfqs, "round_capacity_kg": 300, "capacity_left_kg": 300}
+    ctx = S.Context(_rules15(), CAL3, {"P": 130.0}, random.Random(1))
+    got = {p["rfq_id"]: p["bags"] for p in S.build_plan(state, ctx, S.candidates(state, ctx), {"S1": 1.10, "C1": 0.99},
+                                                        set(), flow=set())}
+    assert got == {"S1": 1}, got
+    lst = S.Context(_rules15(), [{"rounds": [13, 14], "demand_weight": 0.5}], {}, random.Random(1))
+    assert S.calendar_weights(lst)[13] == (0.5, False) and S.calendar_weights(lst)[12] == (1.0, False)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

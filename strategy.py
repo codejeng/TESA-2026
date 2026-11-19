@@ -147,8 +147,12 @@ def calendar_weights(ctx: Context) -> dict:
     out = {n: (1.0, False) for n in range(1, total + 1)}
     for c in ctx.calendar or []:
         try:
-            a, _, b = str(c.get("rounds", "")).partition("-")
-            a, b = int(a), int(b or a)
+            r = c.get("rounds", "")
+            if isinstance(r, (list, tuple)):                  # รองรับ [6, 8] หรือ [6, 7, 8] ด้วย
+                a, b = int(min(r)), int(max(r))
+            else:
+                a, _, b = str(r).replace(" ", "").partition("-")
+                a, b = int(a), int(b or a)
             w = float(c["demand_weight"]) if c.get("demand_weight") is not None else 1.0
         except (TypeError, ValueError):
             continue
@@ -575,6 +579,7 @@ def build_plan(state: dict, ctx: Context, cands: list[dict], k_rfq: dict, probes
             share = min(stock[lid], math.ceil(stock[lid] * wnow / wl)) - sum(n for (l, _), n in alloc.items() if l == lid)
             while share > 0 and budget > 0:
                 opts = [c for c in pairs if c["lot_id"] == lid and not c["probe"] and rfq_room[c["rfq_id"]] > 0
+                        and k_rfq[c["rfq_id"]] >= open_best(lid) - SWITCH_GAP      # flow gate เหมือนลูปหลัก
                         and not (lid in fest_q and rfqs[c["rfq_id"]]["buyer_type"] != "SPECIALTY"
                                  and fest_used[lid] >= fest_q[lid])
                         and not (lid in hold and ok_used[lid] >= hold[lid])]
